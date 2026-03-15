@@ -1,0 +1,86 @@
+/* ═══════════════════════════════════════════════════════
+   AETHEL — Global Styles
+   ═══════════════════════════════════════════════════════ */
+
+@import './styles/theme.css';
+@import './styles/typography.css';
+@import './styles/animations.css';
+@import './styles/textures.css';
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--surface-0);
+  color: var(--surface-ink);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  position: relative;
+}
+
+a {
+  color: var(--brand-purple);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+a:hover {
+  color: var(--brand-purple-deep);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-ink-faint);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--surface-ink-muted);
+}
+
+/* Selection */
+::selection {
+  background: rgba(134, 59, 255, 0.2);
+  color: var(--surface-ink);
+}
+
+/* Focus visible */
+:focus-visible {
+  outline: 2px solid var(--brand-purple);
+  outline-offset: 2px;
+}
