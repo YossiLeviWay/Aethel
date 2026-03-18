@@ -1,0 +1,54 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: ['claude/school-management-app-kaRXi', 'main', 'master']
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: AIzaSyCeFWyujBjN-6m3S3ro18SeYdwYx8XoN1M
+          VITE_FIREBASE_AUTH_DOMAIN: eduflow-pro-12a90.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: eduflow-pro-12a90
+          VITE_FIREBASE_STORAGE_BUCKET: eduflow-pro-12a90.firebasestorage.app
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '272211042783'
+          VITE_FIREBASE_APP_ID: '1:272211042783:web:3c31901a5706b81245a46a'
+
+      - uses: actions/configure-pages@v4
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
