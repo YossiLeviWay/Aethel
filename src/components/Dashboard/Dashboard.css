@@ -1,0 +1,385 @@
+/* Dashboard */
+
+.dashboard-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 4rem 2rem;
+  color: #64748b;
+}
+
+.dashboard-empty p {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+/* Welcome Section */
+.dashboard-welcome {
+  margin-bottom: 1.25rem;
+}
+
+.welcome-greeting {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.welcome-date {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin: 0.25rem 0 0;
+}
+
+/* Today Highlight */
+.dashboard-today {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #eff6ff, #f0f9ff);
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  margin-bottom: 1.25rem;
+}
+
+.today-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.today-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.today-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.today-holiday {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #1e293b;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+}
+
+/* Stats Grid */
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  transition: all 0.15s;
+}
+
+.stat-card:hover {
+  border-color: #bfdbfe;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stat-icon--tasks {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.stat-icon--completed {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.stat-icon--overdue {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.stat-icon--staff {
+  background: #e9d5ff;
+  color: #7c3aed;
+}
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+
+/* Grid layout for sections */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+/* Section Card */
+.dashboard-section {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #2563eb;
+}
+
+.section-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.section-body {
+  padding: 0.75rem;
+}
+
+.section-empty {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  text-align: center;
+  padding: 1.5rem 0;
+  margin: 0;
+}
+
+/* Event Cards */
+.event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.event-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  transition: all 0.15s;
+}
+
+.event-card:hover {
+  border-color: #bfdbfe;
+  background: #f8fafc;
+}
+
+.event-date-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #eff6ff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.event-day {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #2563eb;
+  line-height: 1;
+}
+
+.event-month {
+  font-size: 0.65rem;
+  color: #64748b;
+  margin-top: 0.1rem;
+}
+
+.event-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.event-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-category {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.event-countdown {
+  font-size: 0.72rem;
+  color: #2563eb;
+  font-weight: 500;
+}
+
+/* Holiday Cards */
+.holiday-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.holiday-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-right: 4px solid #e2e8f0;
+  border-radius: 10px;
+  transition: all 0.15s;
+}
+
+.holiday-card:hover {
+  background: #f8fafc;
+}
+
+.holiday-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.holiday-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.holiday-dates {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.holiday-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.holiday-type-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #1e293b;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+}
+
+.holiday-countdown {
+  font-size: 0.72rem;
+  color: #2563eb;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.holiday-vacation-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #dc2626;
+  background: #fee2e2;
+  padding: 0.15rem 0.45rem;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .dashboard-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .dashboard-stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+
+  .stat-card {
+    padding: 0.75rem;
+  }
+
+  .stat-value {
+    font-size: 1.1rem;
+  }
+
+  .welcome-greeting {
+    font-size: 1.15rem;
+  }
+
+  .dashboard-today {
+    flex-wrap: wrap;
+  }
+
+  .holiday-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .holiday-meta {
+    flex-wrap: wrap;
+  }
+}

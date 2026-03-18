@@ -129,6 +129,12 @@
   background: #fff;
 }
 
+.files-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .files-breadcrumb {
   display: flex;
   align-items: center;
@@ -156,8 +162,8 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.4rem 0.85rem;
-  background: #2563eb;
-  color: #fff;
+  background: #f1f5f9;
+  color: #475569;
   border-radius: 8px;
   font-size: 0.8rem;
   font-weight: 600;
@@ -166,7 +172,114 @@
 }
 
 .upload-btn:hover {
-  background: #1d4ed8;
+  background: #e2e8f0;
+}
+
+/* Create file menu */
+.create-file-wrap {
+  position: relative;
+}
+
+.create-file-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+  min-width: 180px;
+  padding: 0.35rem;
+}
+
+.create-file-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  background: none;
+  font-size: 0.82rem;
+  color: #475569;
+  cursor: pointer;
+  border-radius: 6px;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.15s;
+}
+
+.create-file-menu button:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+/* New file form */
+.new-file-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #f0f9ff;
+  border-bottom: 1px solid #bfdbfe;
+}
+
+.new-file-type-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #2563eb;
+  white-space: nowrap;
+}
+
+.new-file-form input {
+  flex: 1;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-family: 'Inter', sans-serif;
+}
+
+/* File editor */
+.file-editor-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.file-editor-name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.file-editor-body {
+  flex: 1;
+  overflow: auto;
+  background: #f8fafc;
+}
+
+.file-icon--sheet {
+  color: #16a34a;
+}
+
+.file-icon--doc {
+  color: #f59e0b;
+}
+
+.empty-hint {
+  font-size: 0.78rem !important;
+  color: #94a3b8;
 }
 
 /* File List */
@@ -188,6 +301,7 @@
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   transition: all 0.15s;
+  cursor: pointer;
 }
 
 .file-item:hover {
@@ -256,5 +370,15 @@
     border-left: none;
     border-bottom: 1px solid #e2e8f0;
     max-height: 200px;
+  }
+
+  .files-header {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+  }
+
+  .files-header-actions {
+    justify-content: flex-end;
   }
 }

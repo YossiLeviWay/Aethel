@@ -50,6 +50,21 @@
   pointer-events: none;
 }
 
+.gantt-controls-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gantt-holiday-badge {
+  padding: 0.35rem 0.75rem;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .gantt-yearly-btn {
   display: flex;
   align-items: center;
@@ -195,6 +210,42 @@
   overflow: hidden;
   text-overflow: ellipsis;
   margin-bottom: 1px;
+}
+
+.gantt-cell--holiday {
+  background: #fffbeb;
+}
+
+.gantt-cell--holiday:hover {
+  background: #fef3c7;
+}
+
+.gantt-holiday-tag {
+  font-size: 0.6rem;
+  color: #92400e;
+  background: #fef3c7;
+  padding: 0px 3px;
+  border-radius: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 1px;
+  font-weight: 600;
+}
+
+.gantt-row-resize-handle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  cursor: row-resize;
+  background: transparent;
+  z-index: 5;
+}
+
+.gantt-row-resize-handle:hover {
+  background: #2563eb;
 }
 
 /* ===== Events ===== */

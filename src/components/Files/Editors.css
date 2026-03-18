@@ -1,0 +1,556 @@
+/* ============================================
+   Shared Editor Styles
+   SpreadsheetEditor & DocumentEditor
+   ============================================ */
+
+/* --- Spreadsheet Editor --- */
+
+.spreadsheet-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+}
+
+.spreadsheet-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.spreadsheet-toolbar .toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.65rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-family: 'Inter', sans-serif;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.spreadsheet-toolbar .toolbar-btn:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #2563eb;
+}
+
+.spreadsheet-toolbar .toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.spreadsheet-toolbar .toolbar-btn--danger:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #ef4444;
+}
+
+.spreadsheet-toolbar .toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background: #e2e8f0;
+  flex-shrink: 0;
+}
+
+.formula-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.formula-bar .cell-ref {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 0.25rem 0.5rem;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  font-family: 'Courier New', monospace;
+}
+
+.formula-bar .formula-icon {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.formula-bar .formula-input {
+  flex: 1;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-family: 'Courier New', monospace;
+  color: #1e293b;
+  direction: ltr;
+  text-align: left;
+}
+
+.formula-bar .formula-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.formula-bar .formula-input:disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+}
+
+.spreadsheet-container {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.spreadsheet-table {
+  border-collapse: collapse;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.spreadsheet-table th,
+.spreadsheet-table td {
+  border: 1px solid #e2e8f0;
+  padding: 0;
+  position: relative;
+}
+
+.spreadsheet-table th {
+  background: #f8fafc;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  text-align: center;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.spreadsheet-table th.corner-header {
+  width: 42px;
+  min-width: 42px;
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  background: #f1f5f9;
+}
+
+.spreadsheet-table th.col-header {
+  min-width: 100px;
+  padding: 0.3rem 0.25rem;
+}
+
+.spreadsheet-table th.col-header input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  font-family: 'Inter', sans-serif;
+  padding: 0;
+  outline: none;
+}
+
+.spreadsheet-table th.col-header input:focus {
+  color: #2563eb;
+  background: #eff6ff;
+  border-radius: 2px;
+}
+
+.spreadsheet-table th.col-header .col-letter {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  display: block;
+  line-height: 1;
+  margin-bottom: 1px;
+}
+
+.spreadsheet-table .row-header {
+  width: 42px;
+  min-width: 42px;
+  background: #f8fafc;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #94a3b8;
+  user-select: none;
+  padding: 0.35rem 0.25rem;
+  position: sticky;
+  right: 0;
+  z-index: 1;
+}
+
+.spreadsheet-table td.cell {
+  height: 32px;
+  min-width: 100px;
+  cursor: cell;
+  font-size: 0.8rem;
+  color: #1e293b;
+  vertical-align: middle;
+}
+
+.spreadsheet-table td.cell:hover {
+  background: #f8fafc;
+}
+
+.spreadsheet-table td.cell.cell--selected {
+  outline: 2px solid #2563eb;
+  outline-offset: -1px;
+  background: #eff6ff;
+  z-index: 1;
+}
+
+.spreadsheet-table td.cell .cell-display {
+  width: 100%;
+  height: 100%;
+  padding: 0.3rem 0.5rem;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: ltr;
+  text-align: left;
+}
+
+.spreadsheet-table td.cell .cell-display.cell-display--formula {
+  color: #2563eb;
+}
+
+.spreadsheet-table td.cell .cell-display.cell-display--error {
+  color: #ef4444;
+  font-style: italic;
+}
+
+.spreadsheet-table td.cell .cell-input {
+  width: 100%;
+  height: 100%;
+  min-height: 32px;
+  border: none;
+  outline: none;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  font-family: 'Inter', sans-serif;
+  color: #1e293b;
+  background: #fff;
+  direction: ltr;
+  text-align: left;
+}
+
+.spreadsheet-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.75rem;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.spreadsheet-status .autosave-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.spreadsheet-status .autosave-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.spreadsheet-status .autosave-dot--pending {
+  background: #f59e0b;
+  animation: pulse-dot 1s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* --- Document Editor --- */
+
+.document-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+}
+
+.document-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.document-toolbar .toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.document-toolbar .toolbar-separator {
+  width: 1px;
+  height: 24px;
+  background: #e2e8f0;
+  margin: 0 0.35rem;
+  flex-shrink: 0;
+}
+
+.document-toolbar .toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.document-toolbar .toolbar-btn:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.document-toolbar .toolbar-btn.active {
+  background: #dbeafe;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+.document-toolbar .toolbar-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.document-toolbar .toolbar-select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-family: 'Inter', sans-serif;
+  color: #475569;
+  background: #fff;
+  cursor: pointer;
+  height: 32px;
+}
+
+.document-toolbar .toolbar-select:hover {
+  border-color: #bfdbfe;
+}
+
+.document-toolbar .color-btn-wrapper {
+  position: relative;
+}
+
+.document-toolbar .color-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+  padding: 0.4rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.document-toolbar .color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.document-toolbar .color-swatch:hover {
+  transform: scale(1.15);
+  border-color: #94a3b8;
+}
+
+.document-content-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 2rem;
+  background: #fff;
+}
+
+.document-content-area .editor-content {
+  min-height: 400px;
+  outline: none;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: #1e293b;
+  direction: rtl;
+  text-align: right;
+}
+
+.document-content-area .editor-content:empty::before {
+  content: 'התחילו לכתוב...';
+  color: #cbd5e1;
+  pointer-events: none;
+}
+
+.document-content-area .editor-content[contenteditable="false"] {
+  cursor: default;
+}
+
+.document-content-area .editor-content h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem 0;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.document-content-area .editor-content h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 0.6rem 0;
+  color: #1e293b;
+  line-height: 1.35;
+}
+
+.document-content-area .editor-content h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: #334155;
+  line-height: 1.4;
+}
+
+.document-content-area .editor-content p {
+  margin: 0 0 0.5rem 0;
+}
+
+.document-content-area .editor-content ul,
+.document-content-area .editor-content ol {
+  margin: 0 1.5rem 0.5rem 0;
+  padding: 0 1rem 0 0;
+}
+
+.document-content-area .editor-content li {
+  margin-bottom: 0.25rem;
+}
+
+.document-content-area .editor-content hr {
+  border: none;
+  border-top: 2px solid #e2e8f0;
+  margin: 1rem 0;
+}
+
+.document-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.75rem;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.document-status .autosave-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.document-status .autosave-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.document-status .autosave-dot--pending {
+  background: #f59e0b;
+  animation: pulse-dot 1s infinite;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 768px) {
+  .spreadsheet-toolbar {
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .formula-bar {
+    flex-wrap: wrap;
+  }
+
+  .formula-bar .formula-input {
+    min-width: 0;
+  }
+
+  .document-toolbar {
+    gap: 0.15rem;
+    padding: 0.4rem 0.5rem;
+  }
+
+  .document-toolbar .toolbar-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .document-content-area {
+    padding: 1rem;
+  }
+
+  .document-content-area .editor-content {
+    min-height: 250px;
+  }
+}

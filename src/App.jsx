@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
 import AppLayout from './components/Layout/AppLayout';
+import Dashboard from './components/Dashboard/Dashboard';
 import GanttChart from './components/Gantt/GanttChart';
 import CategoryManager from './components/Gantt/CategoryManager';
 import StaffManagement from './components/Staff/StaffManagement';
@@ -42,6 +43,16 @@ function PrincipalRoute({ children }) {
   return children;
 }
 
+function SchoolRequiredRoute({ children }) {
+  const { userData, selectedSchool, loading } = useAuth();
+  if (loading) return null;
+  const schoolId = selectedSchool || userData?.schoolId;
+  if (!schoolId) {
+    return <Navigate to="/" />;
+  }
+  return children;
+}
+
 function PublicRoute({ children }) {
   const { currentUser, loading } = useAuth();
   if (loading) return null;
@@ -58,12 +69,13 @@ export default function App() {
           <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
 
           <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-            <Route index element={<GanttChart />} />
-            <Route path="categories" element={<PrincipalRoute><CategoryManager /></PrincipalRoute>} />
-            <Route path="staff" element={<StaffManagement />} />
-            <Route path="tasks" element={<TaskBoard />} />
-            <Route path="files" element={<FileManager />} />
-            <Route path="data" element={<ExcelWriter />} />
+            <Route index element={<Dashboard />} />
+            <Route path="calendar" element={<SchoolRequiredRoute><GanttChart /></SchoolRequiredRoute>} />
+            <Route path="categories" element={<SchoolRequiredRoute><PrincipalRoute><CategoryManager /></PrincipalRoute></SchoolRequiredRoute>} />
+            <Route path="staff" element={<SchoolRequiredRoute><StaffManagement /></SchoolRequiredRoute>} />
+            <Route path="tasks" element={<SchoolRequiredRoute><TaskBoard /></SchoolRequiredRoute>} />
+            <Route path="files" element={<SchoolRequiredRoute><FileManager /></SchoolRequiredRoute>} />
+            <Route path="data" element={<SchoolRequiredRoute><ExcelWriter /></SchoolRequiredRoute>} />
             <Route path="schools" element={<AdminRoute><SchoolManagement /></AdminRoute>} />
             <Route path="settings" element={<Settings />} />
           </Route>

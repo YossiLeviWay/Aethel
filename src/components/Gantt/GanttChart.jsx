@@ -15,6 +15,7 @@ import {
 import Header from '../Layout/Header';
 import EventModal from './EventModal';
 import YearlyOverview from './YearlyOverview';
+import { getHolidaysForMonth } from '../../data/holidays';
 import { ChevronDown, Eye, Plus } from 'lucide-react';
 import './Gantt.css';
 
@@ -24,7 +25,7 @@ const HEBREW_MONTHS = [
   'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
 ];
 
-const DEFAULT_CATEGORIES = ['כללי', 'כיתה י׳', 'כיתה י״א', 'כיתה י״ב', 'צוות'];
+const DEFAULT_CATEGORIES = ['כללי'];
 
 const PASTEL_COLORS = [
   '#fecdd3', '#fed7aa', '#fef08a', '#bbf7d0', '#99f6e4',
@@ -63,6 +64,7 @@ export default function GanttChart() {
   const [month, setMonth] = useState(now.getMonth());
   const [events, setEvents] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [categoryDocs, setCategoryDocs] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
@@ -70,8 +72,22 @@ export default function GanttChart() {
   const [yearlyOpen, setYearlyOpen] = useState(false);
   const [tooltip, setTooltip] = useState(null);
   const [columnWidths, setColumnWidths] = useState([1, 1, 1, 1, 1, 1, 1]);
+  const [rowHeights, setRowHeights] = useState({});
 
   const schoolId = selectedSchool || userData?.schoolId;
+  const holidays = getHolidaysForMonth(year, month);
+
+  // Build a map of holidays by date key
+  const holidaysByDate = {};
+  holidays.forEach(h => {
+    const start = new Date(h.startDate);
+    const end = new Date(h.endDate);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const key = dateKey(d);
+      if (!holidaysByDate[key]) holidaysByDate[key] = [];
+      holidaysByDate[key].push(h);
+    }
+  });
 
   useEffect(() => {
     if (!schoolId) return;
@@ -89,22 +105,25 @@ export default function GanttChart() {
 
   useEffect(() => {
     if (!schoolId) return;
-    async function loadCategories() {
-      try {
-        const snap = await getDocs(collection(db, `categories_${schoolId}`));
-        if (snap.size > 0) {
-          setCategories(snap.docs.map(d => d.data().name));
-        }
-      } catch {
-        // use defaults
+    const unsub = onSnapshot(collection(db, `categories_${schoolId}`), (snap) => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setCategoryDocs(docs);
+      if (docs.length > 0) {
+        setCategories(docs.map(d => d.name));
+      } else {
+        setCategories(DEFAULT_CATEGORIES);
       }
-    }
-    loadCategories();
+    });
+    return unsub;
   }, [schoolId]);
 
   function getEventsForCell(date, category) {
     const key = dateKey(date);
     return events.filter(e => e.date === key && e.category === category);
+  }
+
+  function getHolidaysForCell(date) {
+    return holidaysByDate[dateKey(date)] || [];
   }
 
   function handleCellClick(date, category) {
@@ -124,25 +143,34 @@ export default function GanttChart() {
 
   async function handleSaveEvent(eventData) {
     if (!schoolId) return;
-    const colRef = collection(db, `events_${schoolId}`);
-    if (editingEvent) {
-      await updateDoc(doc(db, `events_${schoolId}`, editingEvent.id), eventData);
-    } else {
-      await addDoc(colRef, {
-        ...eventData,
-        year,
-        month,
-        createdBy: userData?.uid || '',
-        createdAt: new Date().toISOString()
-      });
+    try {
+      const colRef = collection(db, `events_${schoolId}`);
+      if (editingEvent) {
+        await updateDoc(doc(db, `events_${schoolId}`, editingEvent.id), eventData);
+      } else {
+        await addDoc(colRef, {
+          ...eventData,
+          year,
+          month,
+          createdBy: userData?.uid || '',
+          createdAt: new Date().toISOString()
+        });
+      }
+      setModalOpen(false);
+    } catch (err) {
+      console.error('Error saving event:', err);
+      alert('שגיאה בשמירת האירוע: ' + err.message);
     }
-    setModalOpen(false);
   }
 
   async function handleDeleteEvent() {
     if (!editingEvent || !schoolId) return;
-    await deleteDoc(doc(db, `events_${schoolId}`, editingEvent.id));
-    setModalOpen(false);
+    try {
+      await deleteDoc(doc(db, `events_${schoolId}`, editingEvent.id));
+      setModalOpen(false);
+    } catch (err) {
+      alert('שגיאה במחיקת האירוע: ' + err.message);
+    }
   }
 
   function handleMouseEnter(e, event) {
@@ -181,6 +209,28 @@ export default function GanttChart() {
     document.addEventListener('mouseup', onMouseUp);
   }, [columnWidths]);
 
+  const handleRowResize = useCallback((rowKey, e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = rowHeights[rowKey] || 42;
+
+    function onMouseMove(ev) {
+      const diff = ev.clientY - startY;
+      setRowHeights(prev => ({
+        ...prev,
+        [rowKey]: Math.max(28, startHeight + diff)
+      }));
+    }
+
+    function onMouseUp() {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [rowHeights]);
+
   const weeks = getWeeksInMonth(year, month);
   const totalFlex = columnWidths.reduce((a, b) => a + b, 0);
 
@@ -218,10 +268,17 @@ export default function GanttChart() {
             <ChevronDown size={14} className="gantt-select-icon" />
           </div>
         </div>
-        <button className="gantt-yearly-btn" onClick={() => setYearlyOpen(true)}>
-          <Eye size={16} />
-          מבט שנתי
-        </button>
+        <div className="gantt-controls-actions">
+          {holidays.length > 0 && (
+            <div className="gantt-holiday-badge">
+              {holidays.length} חגים/חופשות
+            </div>
+          )}
+          <button className="gantt-yearly-btn" onClick={() => setYearlyOpen(true)}>
+            <Eye size={16} />
+            מבט שנתי
+          </button>
+        </div>
       </div>
 
       <div className="gantt-table-wrap">
@@ -252,48 +309,69 @@ export default function GanttChart() {
               const weekEnd = week[6].getDate();
               const label = `${weekStart}-${weekEnd}`;
 
-              return categories.map((cat, ci) => (
-                <tr key={`${wi}-${ci}`} className={ci === 0 ? 'gantt-week-start' : ''}>
-                  {ci === 0 && (
-                    <td className="gantt-category-cell gantt-week-label" rowSpan={categories.length}>
-                      <div className="gantt-week-num">שבוע {wi + 1}</div>
-                      <div className="gantt-week-dates">{label}</div>
-                    </td>
-                  )}
-                  {ci > 0 && ci === 1 && null}
-                  {week.map((date, di) => {
-                    const isCurrentMonth = date.getMonth() === month;
-                    const isToday = dateKey(date) === dateKey(new Date());
-                    const cellEvents = getEventsForCell(date, cat);
+              return categories.map((cat, ci) => {
+                const rowKey = `${wi}-${ci}`;
+                const rowH = rowHeights[rowKey] || 42;
 
-                    return (
-                      <td
-                        key={di}
-                        className={`gantt-cell ${!isCurrentMonth ? 'gantt-cell--dim' : ''} ${isToday ? 'gantt-cell--today' : ''}`}
-                        style={{ width: `${(columnWidths[di] / totalFlex) * 100}%` }}
-                        onClick={() => handleCellClick(date, cat)}
-                      >
-                        {ci === 0 && (
-                          <div className="gantt-cell-date">{date.getDate()}</div>
-                        )}
-                        <div className="gantt-cell-cat">{cat}</div>
-                        {cellEvents.map(ev => (
-                          <div
-                            key={ev.id}
-                            className="gantt-event"
-                            style={{ background: ev.color || PASTEL_COLORS[0] }}
-                            onClick={e => handleEventClick(e, ev)}
-                            onMouseEnter={e => handleMouseEnter(e, ev)}
-                            onMouseLeave={handleMouseLeave}
-                          >
-                            {ev.title}
-                          </div>
-                        ))}
+                return (
+                  <tr key={rowKey} className={ci === 0 ? 'gantt-week-start' : ''}>
+                    {ci === 0 && (
+                      <td className="gantt-category-cell gantt-week-label" rowSpan={categories.length}>
+                        <div className="gantt-week-num">שבוע {wi + 1}</div>
+                        <div className="gantt-week-dates">{label}</div>
                       </td>
-                    );
-                  })}
-                </tr>
-              ));
+                    )}
+                    {week.map((date, di) => {
+                      const isCurrentMonth = date.getMonth() === month;
+                      const isToday = dateKey(date) === dateKey(new Date());
+                      const cellEvents = getEventsForCell(date, cat);
+                      const cellHolidays = ci === 0 ? getHolidaysForCell(date) : [];
+                      const isHoliday = (holidaysByDate[dateKey(date)] || []).some(h => h.isVacation && !h.isSchoolDay);
+
+                      return (
+                        <td
+                          key={di}
+                          className={`gantt-cell ${!isCurrentMonth ? 'gantt-cell--dim' : ''} ${isToday ? 'gantt-cell--today' : ''} ${isHoliday ? 'gantt-cell--holiday' : ''}`}
+                          style={{
+                            width: `${(columnWidths[di] / totalFlex) * 100}%`,
+                            height: rowH
+                          }}
+                          onClick={() => handleCellClick(date, cat)}
+                        >
+                          {ci === 0 && (
+                            <div className="gantt-cell-date">{date.getDate()}</div>
+                          )}
+                          {cellHolidays.length > 0 && (
+                            <div className="gantt-holiday-tag" title={cellHolidays.map(h => h.name).join(', ')}>
+                              {cellHolidays[0].name}
+                            </div>
+                          )}
+                          <div className="gantt-cell-cat">{cat}</div>
+                          {cellEvents.map(ev => (
+                            <div
+                              key={ev.id}
+                              className="gantt-event"
+                              style={{ background: ev.color || PASTEL_COLORS[0] }}
+                              onClick={e => handleEventClick(e, ev)}
+                              onMouseEnter={e => handleMouseEnter(e, ev)}
+                              onMouseLeave={handleMouseLeave}
+                            >
+                              {ev.title}
+                            </div>
+                          ))}
+                          {/* Row resize handle on last column */}
+                          {di === 6 && (
+                            <div
+                              className="gantt-row-resize-handle"
+                              onMouseDown={e => handleRowResize(rowKey, e)}
+                            />
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              });
             })}
           </tbody>
         </table>

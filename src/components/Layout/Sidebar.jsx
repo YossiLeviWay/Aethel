@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
+  Home,
   Calendar,
   Users,
   CheckSquare,
@@ -14,26 +15,36 @@ import {
   School,
   LayoutGrid
 } from 'lucide-react';
+import { AVATAR_OPTIONS } from '../../data/avatars';
 import './Layout.css';
 
 const NAV_ITEMS = [
-  { path: '/', icon: Calendar, label: 'לוח שנה', all: true },
-  { path: '/categories', icon: LayoutGrid, label: 'קטגוריות', roles: ['global_admin', 'principal'] },
-  { path: '/staff', icon: Users, label: 'סגל וקהילה', all: true },
-  { path: '/tasks', icon: CheckSquare, label: 'משימות', all: true },
-  { path: '/files', icon: FolderOpen, label: 'קבצים', all: true },
-  { path: '/data', icon: Table2, label: 'מיפוי נתונים', all: true },
+  { path: '/', icon: Home, label: 'דשבורד', all: true },
+  { path: '/calendar', icon: Calendar, label: 'לוח שנה', requiresSchool: true },
+  { path: '/categories', icon: LayoutGrid, label: 'קטגוריות', roles: ['global_admin', 'principal'], requiresSchool: true },
+  { path: '/staff', icon: Users, label: 'סגל וקהילה', requiresSchool: true },
+  { path: '/tasks', icon: CheckSquare, label: 'משימות', requiresSchool: true },
+  { path: '/files', icon: FolderOpen, label: 'קבצים', requiresSchool: true },
+  { path: '/data', icon: Table2, label: 'מיפוי נתונים', requiresSchool: true },
   { path: '/schools', icon: School, label: 'ניהול מוסדות', roles: ['global_admin'] },
   { path: '/settings', icon: Settings, label: 'הגדרות', all: true }
 ];
 
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
-  const { logout, userData } = useAuth();
+  const { logout, userData, selectedSchool } = useAuth();
   const navigate = useNavigate();
 
+  const schoolId = selectedSchool || userData?.schoolId;
+
   function canSeeItem(item) {
-    if (item.all) return true;
+    if (item.requiresSchool && !schoolId) return false;
+    if (item.all || item.requiresSchool) {
+      if (item.roles && userData?.role) {
+        return item.roles.includes(userData.role);
+      }
+      return true;
+    }
     if (item.roles && userData?.role) {
       return item.roles.includes(userData.role);
     }
@@ -44,6 +55,10 @@ export default function Sidebar() {
     await logout();
     navigate('/login');
   }
+
+  const avatarOption = userData?.avatar
+    ? AVATAR_OPTIONS.find(a => a.id === userData.avatar)
+    : null;
 
   return (
     <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
@@ -78,7 +93,13 @@ export default function Sidebar() {
       <div className="sidebar-footer">
         {!collapsed && userData && (
           <div className="sidebar-user">
-            <div className="sidebar-avatar">
+            <div
+              className="sidebar-avatar"
+              style={avatarOption ? {
+                background: avatarOption.bg,
+                color: avatarOption.textColor
+              } : undefined}
+            >
               {userData.fullName?.charAt(0) || '?'}
             </div>
             <div className="sidebar-user-info">

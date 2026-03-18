@@ -35,6 +35,13 @@
   flex-shrink: 0;
 }
 
+.settings-avatar--large {
+  width: 72px;
+  height: 72px;
+  font-size: 1.7rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
 .settings-user-info h3 {
   margin: 0;
   font-size: 1.1rem;
@@ -50,6 +57,103 @@
   text-align: right;
 }
 
+/* ===== Avatar Picker ===== */
+.avatar-picker-section {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.avatar-picker-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 0.75rem;
+}
+
+.avatar-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.avatar-option {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.avatar-option:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.avatar-option--selected {
+  border-color: #1e293b;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #1e293b;
+}
+
+.avatar-option--none {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.avatar-check {
+  position: absolute;
+  bottom: -2px;
+  left: -2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #22c55e;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===== Role Badge ===== */
+.role-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.role-global_admin {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.role-principal {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.role-editor {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.role-viewer {
+  background: #f8fafc;
+  color: #64748b;
+}
+
+/* ===== Form ===== */
 .settings-form {
   display: flex;
   flex-direction: column;
