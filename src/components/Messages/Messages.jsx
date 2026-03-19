@@ -9,11 +9,12 @@ import {
   onSnapshot,
   addDoc,
   updateDoc,
+  deleteDoc,
   doc,
   getDocs,
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Send, Search, Mail, MailOpen, Circle, User } from 'lucide-react';
+import { Send, Search, Mail, Circle, Trash2, X } from 'lucide-react';
 import './Messages.css';
 
 export default function Messages() {
@@ -26,6 +27,8 @@ export default function Messages() {
   const [showNewConv, setShowNewConv] = useState(false);
   const [searchUsers, setSearchUsers] = useState('');
   const [searchConv, setSearchConv] = useState('');
+  const [hoveredMsg, setHoveredMsg] = useState(null);
+  const [confirmDeleteMsg, setConfirmDeleteMsg] = useState(null);
   const messagesEndRef = useRef(null);
   const uid = currentUser?.uid;
 
@@ -49,36 +52,65 @@ export default function Messages() {
     const unsub = onSnapshot(q, (snap) => {
       const convs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       convs.sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''));
-      setConversations(convs);
+
+      // Merge duplicate conversations for the same participant pair
+      const merged = [];
+      const pairMap = new Map();
+      for (const conv of convs) {
+        const pairKey = [...conv.participants].sort().join('|');
+        if (pairMap.has(pairKey)) {
+          // Keep the one with the latest message, mark the other for merging
+          const existing = pairMap.get(pairKey);
+          existing._mergedIds = existing._mergedIds || [];
+          existing._mergedIds.push(conv.id);
+        } else {
+          pairMap.set(pairKey, conv);
+          merged.push(conv);
+        }
+      }
+      setConversations(merged);
     }, (err) => {
       console.error('Error loading conversations:', err);
     });
     return unsub;
   }, [uid]);
 
-  // Listen to messages in active conversation
+  // Listen to messages in active conversation (including merged conversations)
   useEffect(() => {
     if (!activeConv) { setMessages([]); return; }
-    const q = query(
-      collection(db, 'conversations', activeConv.id, 'messages'),
-      orderBy('createdAt', 'asc')
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-    }, (err) => {
-      console.error('Error loading messages:', err);
-    });
+
+    const convIds = [activeConv.id, ...(activeConv._mergedIds || [])];
+    const unsubs = [];
+    const allMessages = {};
+
+    for (const convId of convIds) {
+      const q = query(
+        collection(db, 'conversations', convId, 'messages'),
+        orderBy('createdAt', 'asc')
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        allMessages[convId] = snap.docs.map(d => ({ id: d.id, ...d.data(), _convId: convId }));
+        // Combine and sort all messages
+        const combined = Object.values(allMessages).flat();
+        combined.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+        setMessages(combined);
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      }, (err) => {
+        console.error('Error loading messages:', err);
+      });
+      unsubs.push(unsub);
+    }
+
     // Mark as read
     if (activeConv.unreadBy?.includes(uid)) {
       const newUnread = (activeConv.unreadBy || []).filter(id => id !== uid);
       updateDoc(doc(db, 'conversations', activeConv.id), { unreadBy: newUnread });
     }
-    return unsub;
+    return () => unsubs.forEach(u => u());
   }, [activeConv?.id, uid]);
 
   async function startConversation(otherUser) {
-    // Check if conversation already exists
+    // Check if conversation already exists (using merged list)
     const existing = conversations.find(c =>
       c.participants.includes(otherUser.id) && c.participants.length === 2
     );
@@ -118,6 +150,31 @@ export default function Messages() {
     });
   }
 
+  async function deleteMessage(msg) {
+    if (!msg || !activeConv) return;
+    const convId = msg._convId || activeConv.id;
+    try {
+      await deleteDoc(doc(db, 'conversations', convId, 'messages', msg.id));
+      // If this was the last message, update conversation lastMessage
+      const remaining = messages.filter(m => m.id !== msg.id);
+      if (remaining.length > 0) {
+        const last = remaining[remaining.length - 1];
+        await updateDoc(doc(db, 'conversations', activeConv.id), {
+          lastMessage: last.text,
+          lastMessageAt: last.createdAt
+        });
+      } else {
+        await updateDoc(doc(db, 'conversations', activeConv.id), {
+          lastMessage: '',
+          lastMessageAt: new Date().toISOString()
+        });
+      }
+    } catch (err) {
+      console.error('Error deleting message:', err);
+    }
+    setConfirmDeleteMsg(null);
+  }
+
   function getOtherName(conv) {
     if (!conv.participantNames) return 'משתמש';
     const otherId = conv.participants.find(id => id !== uid);
@@ -140,6 +197,19 @@ export default function Messages() {
     return (u.fullName || '').toLowerCase().includes(searchUsers.toLowerCase()) ||
            (u.email || '').toLowerCase().includes(searchUsers.toLowerCase());
   });
+
+  function formatMsgDate(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    const today = new Date();
+    const isToday = d.toDateString() === today.toDateString();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const isYesterday = d.toDateString() === yesterday.toDateString();
+    if (isToday) return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    if (isYesterday) return 'אתמול ' + d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  }
 
   return (
     <div className="page">
@@ -227,14 +297,35 @@ export default function Messages() {
                   {messages.map(msg => {
                     const isMe = msg.senderId === uid;
                     return (
-                      <div key={msg.id} className={`msg-bubble ${isMe ? 'msg-bubble--me' : ''}`}>
+                      <div
+                        key={msg.id}
+                        className={`msg-bubble ${isMe ? 'msg-bubble--me' : ''}`}
+                        onMouseEnter={() => setHoveredMsg(msg.id)}
+                        onMouseLeave={() => { setHoveredMsg(null); if (confirmDeleteMsg === msg.id) setConfirmDeleteMsg(null); }}
+                      >
                         <div className="msg-bubble-header">
                           <span className="msg-sender">{isMe ? 'אני' : msg.senderName}</span>
                           <span className="msg-time">
-                            {msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : ''}
+                            {formatMsgDate(msg.createdAt)}
                           </span>
+                          {isMe && hoveredMsg === msg.id && (
+                            <button
+                              className="msg-delete-btn"
+                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteMsg(msg.id); }}
+                              title="מחיקת הודעה"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
                         </div>
                         <div className="msg-text">{msg.text}</div>
+                        {confirmDeleteMsg === msg.id && (
+                          <div className="msg-delete-confirm">
+                            <span>למחוק הודעה זו?</span>
+                            <button className="msg-delete-yes" onClick={() => deleteMessage(msg)}>מחק</button>
+                            <button className="msg-delete-no" onClick={() => setConfirmDeleteMsg(null)}>ביטול</button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

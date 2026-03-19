@@ -315,6 +315,68 @@
   font-size: 0.88rem;
 }
 
+/* Message delete UI */
+.msg-delete-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s;
+}
+
+.msg-delete-btn:hover {
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+.msg-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.7rem;
+}
+
+.msg-delete-confirm span {
+  color: #64748b;
+}
+
+.msg-delete-yes {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+}
+
+.msg-delete-yes:hover {
+  background: #dc2626;
+}
+
+.msg-delete-no {
+  background: #f1f5f9;
+  color: #475569;
+  border: none;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+}
+
+.msg-delete-no:hover {
+  background: #e2e8f0;
+}
+
 @media (max-width: 768px) {
   .messages-layout {
     flex-direction: column;

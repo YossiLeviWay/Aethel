@@ -11,12 +11,13 @@ import {
   addDoc,
   doc,
   setDoc,
-  arrayUnion
+  arrayUnion,
+  getDoc
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebase';
 import Header from '../Layout/Header';
-import { Plus, Edit3, Trash2, Shield, Eye, Search, X, UserPlus, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Edit3, Trash2, Shield, Eye, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Staff.css';
 
@@ -27,6 +28,125 @@ const ROLE_LABELS = {
   viewer: 'צופה'
 };
 
+const DEFAULT_PERMISSIONS = {
+  calendar_view: true,
+  calendar_edit: false,
+  categories_view: true,
+  categories_edit: false,
+  staff_view: true,
+  staff_edit: false,
+  tasks_view: true,
+  tasks_edit: false,
+  tasks_assign: false,
+  teams_view: true,
+  teams_edit: false,
+  files_view: true,
+  files_upload: false,
+  files_delete: false,
+  messages_send: true,
+  messages_delete: false,
+  holidays_view: true,
+  holidays_edit: false,
+  data_mapping_view: true,
+  data_mapping_edit: false,
+  schools_manage: false,
+  settings_edit: false,
+};
+
+const PERMISSION_GROUPS = [
+  {
+    label: 'לוח שנה',
+    permissions: [
+      { key: 'calendar_view', label: 'צפייה בלוח שנה' },
+      { key: 'calendar_edit', label: 'עריכת אירועים' },
+    ]
+  },
+  {
+    label: 'קטגוריות',
+    permissions: [
+      { key: 'categories_view', label: 'צפייה בקטגוריות' },
+      { key: 'categories_edit', label: 'עריכת קטגוריות' },
+    ]
+  },
+  {
+    label: 'סגל וקהילה',
+    permissions: [
+      { key: 'staff_view', label: 'צפייה בסגל' },
+      { key: 'staff_edit', label: 'עריכת סגל והרשאות' },
+    ]
+  },
+  {
+    label: 'משימות',
+    permissions: [
+      { key: 'tasks_view', label: 'צפייה במשימות' },
+      { key: 'tasks_edit', label: 'יצירה ועריכת משימות' },
+      { key: 'tasks_assign', label: 'הקצאת משימות לאחרים' },
+    ]
+  },
+  {
+    label: 'צוותים',
+    permissions: [
+      { key: 'teams_view', label: 'צפייה בצוותים' },
+      { key: 'teams_edit', label: 'ניהול צוותים' },
+    ]
+  },
+  {
+    label: 'קבצים',
+    permissions: [
+      { key: 'files_view', label: 'צפייה בקבצים' },
+      { key: 'files_upload', label: 'העלאת קבצים' },
+      { key: 'files_delete', label: 'מחיקת קבצים' },
+    ]
+  },
+  {
+    label: 'הודעות',
+    permissions: [
+      { key: 'messages_send', label: 'שליחת הודעות' },
+      { key: 'messages_delete', label: 'מחיקת הודעות' },
+    ]
+  },
+  {
+    label: 'חגים וחופשות',
+    permissions: [
+      { key: 'holidays_view', label: 'צפייה בחגים' },
+      { key: 'holidays_edit', label: 'עריכת חגים' },
+    ]
+  },
+  {
+    label: 'מיפוי נתונים',
+    permissions: [
+      { key: 'data_mapping_view', label: 'צפייה במיפוי' },
+      { key: 'data_mapping_edit', label: 'עריכת מיפוי נתונים' },
+    ]
+  },
+  {
+    label: 'הגדרות מערכת',
+    permissions: [
+      { key: 'schools_manage', label: 'ניהול מוסדות' },
+      { key: 'settings_edit', label: 'עריכת הגדרות' },
+    ]
+  },
+];
+
+function getPermissionsForRole(role) {
+  const perms = { ...DEFAULT_PERMISSIONS };
+  if (role === 'global_admin') {
+    for (const key of Object.keys(perms)) perms[key] = true;
+  } else if (role === 'principal') {
+    for (const key of Object.keys(perms)) perms[key] = true;
+    perms.schools_manage = false;
+  } else if (role === 'editor') {
+    perms.calendar_edit = true;
+    perms.tasks_edit = true;
+    perms.tasks_assign = true;
+    perms.teams_edit = true;
+    perms.files_upload = true;
+    perms.messages_send = true;
+    perms.data_mapping_edit = true;
+  }
+  return perms;
+}
+
 export default function StaffManagement() {
   const { userData, selectedSchool, isPrincipal, isGlobalAdmin, approveUser, rejectUser } = useAuth();
   const [staff, setStaff] = useState([]);
@@ -36,9 +156,12 @@ export default function StaffManagement() {
   const [viewMode, setViewMode] = useState('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '' });
+  const [addForm, setAddForm] = useState({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '', password: '' });
   const [addError, setAddError] = useState('');
   const [schools, setSchools] = useState([]);
+  const [permissionsUser, setPermissionsUser] = useState(null);
+  const [permissionsForm, setPermissionsForm] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState({});
 
   const schoolId = selectedSchool || userData?.schoolId;
 
@@ -62,19 +185,16 @@ export default function StaffManagement() {
   }
 
   async function loadStaff() {
-    // Query with new schoolIds array-contains
     const q1 = query(collection(db, 'users'), where('schoolIds', 'array-contains', schoolId));
     const snap1 = await getDocs(q1);
     const staffMap = new Map();
     snap1.docs.forEach(d => staffMap.set(d.id, { id: d.id, ...d.data() }));
 
-    // Fallback: also query with old schoolId field for backward compatibility
     const q2 = query(collection(db, 'users'), where('schoolId', '==', schoolId));
     const snap2 = await getDocs(q2);
     snap2.docs.forEach(d => {
       if (!staffMap.has(d.id)) {
         const data = d.data();
-        // Only include if not in pendingSchools for this school (i.e., actually approved via old schema)
         const pending = data.pendingSchools || [];
         if (!pending.includes(schoolId)) {
           staffMap.set(d.id, { id: d.id, ...data });
@@ -127,17 +247,58 @@ export default function StaffManagement() {
     setEditForm({ role: user.role, jobTitle: user.jobTitle || '', assignedSchoolId: '' });
   }
 
+  async function openPermissions(user) {
+    setPermissionsUser(user);
+    // Load saved permissions or use role defaults
+    try {
+      const permDoc = await getDoc(doc(db, 'users', user.id));
+      const data = permDoc.data();
+      if (data?.permissions) {
+        setPermissionsForm({ ...getPermissionsForRole(user.role), ...data.permissions });
+      } else {
+        setPermissionsForm(getPermissionsForRole(user.role));
+      }
+    } catch {
+      setPermissionsForm(getPermissionsForRole(user.role));
+    }
+    // Expand all groups by default
+    const expanded = {};
+    PERMISSION_GROUPS.forEach(g => { expanded[g.label] = true; });
+    setExpandedGroups(expanded);
+  }
+
+  async function savePermissions() {
+    if (!permissionsUser) return;
+    try {
+      await updateDoc(doc(db, 'users', permissionsUser.id), { permissions: permissionsForm });
+      setPermissionsUser(null);
+      loadStaff();
+    } catch (err) {
+      alert('שגיאה בשמירת ההרשאות: ' + err.message);
+    }
+  }
+
+  function togglePermission(key) {
+    setPermissionsForm(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function toggleGroup(label) {
+    setExpandedGroups(prev => ({ ...prev, [label]: !prev[label] }));
+  }
+
   async function handleAddStaff(e) {
     e.preventDefault();
     if (!addForm.fullName.trim() || !addForm.email.trim()) return;
+    if (!addForm.password || addForm.password.length < 6) {
+      setAddError('הסיסמא חייבת להכיל לפחות 6 תווים');
+      return;
+    }
     setAddError('');
 
     const targetSchoolId = addForm.schoolId || schoolId;
 
     try {
-      // Create a temporary password - user should reset
-      const tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
-      const cred = await createUserWithEmailAndPassword(auth, addForm.email, tempPassword);
+      const cred = await createUserWithEmailAndPassword(auth, addForm.email, addForm.password);
 
       await setDoc(doc(db, 'users', cred.user.uid), {
         uid: cred.user.uid,
@@ -148,13 +309,14 @@ export default function StaffManagement() {
         schoolId: targetSchoolId,
         schoolIds: [targetSchoolId],
         pendingSchools: [],
+        permissions: getPermissionsForRole(addForm.role),
         phone: '',
         avatar: '',
         createdAt: new Date().toISOString()
       });
 
       setShowAddModal(false);
-      setAddForm({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '' });
+      setAddForm({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '', password: '' });
       loadStaff();
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
@@ -169,7 +331,6 @@ export default function StaffManagement() {
   const isAdmin = isGlobalAdmin();
   const canApprove = isPrincipal() || isGlobalAdmin();
 
-  // Filter staff based on search
   const filteredStaff = staff.filter(user => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -293,8 +454,11 @@ export default function StaffManagement() {
                 <p className="staff-card-email">{user.email}</p>
                 {canEdit && (
                   <div className="staff-card-actions">
-                    <button className="icon-btn" onClick={() => startEdit(user)}>
+                    <button className="icon-btn" onClick={() => openPermissions(user)} title="הרשאות מפורטות">
                       <Shield size={14} />
+                    </button>
+                    <button className="icon-btn" onClick={() => startEdit(user)} title="עריכה">
+                      <Edit3 size={14} />
                     </button>
                     <button className="icon-btn icon-btn--danger" onClick={() => handleDelete(user.id)}>
                       <Trash2 size={14} />
@@ -372,8 +536,11 @@ export default function StaffManagement() {
                     {canEdit && (
                       <td>
                         <div className="td-actions">
-                          <button className="icon-btn" title="הרשאות" onClick={() => startEdit(user)}>
+                          <button className="icon-btn" title="הרשאות מפורטות" onClick={() => openPermissions(user)}>
                             <Shield size={15} />
+                          </button>
+                          <button className="icon-btn" title="עריכת תפקיד" onClick={() => startEdit(user)}>
+                            <Edit3 size={15} />
                           </button>
                           <button className="icon-btn icon-btn--danger" title="הסרה" onClick={() => handleDelete(user.id)}>
                             <Trash2 size={15} />
@@ -424,6 +591,24 @@ export default function StaffManagement() {
                     />
                   </div>
                   <div className="form-group">
+                    <label>
+                      <Lock size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                      סיסמא
+                    </label>
+                    <input
+                      type="password"
+                      value={addForm.password}
+                      onChange={e => setAddForm(prev => ({ ...prev, password: e.target.value }))}
+                      placeholder="סיסמא (לפחות 6 תווים)"
+                      dir="ltr"
+                      required
+                      minLength={6}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                      הסיסמא תשמש את איש הצוות להתחברות למערכת
+                    </span>
+                  </div>
+                  <div className="form-group">
                     <label>תפקיד</label>
                     <input
                       value={addForm.jobTitle}
@@ -464,6 +649,68 @@ export default function StaffManagement() {
                     <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>ביטול</button>
                   </div>
                 </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Detailed Permissions Modal */}
+        {permissionsUser && (
+          <div className="modal-overlay" onClick={() => setPermissionsUser(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
+              <div className="modal-header">
+                <h3>הרשאות — {permissionsUser.fullName}</h3>
+                <button className="modal-close" onClick={() => setPermissionsUser(null)}><X size={18} /></button>
+              </div>
+              <div style={{ padding: '0.75rem 1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>תפקיד:</span>
+                  <span className={`role-badge role-${permissionsUser.role}`}>
+                    {ROLE_LABELS[permissionsUser.role] || 'צופה'}
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '0 0 1rem' }}>
+                  ניתן להתאים את ההרשאות לכל משתמש בנפרד. שינויים ישפיעו על הגישה של המשתמש לפעולות שונות באפליקציה.
+                </p>
+              </div>
+              <div className="permissions-list">
+                {PERMISSION_GROUPS.map(group => (
+                  <div key={group.label} className="permissions-group">
+                    <button
+                      className="permissions-group-header"
+                      onClick={() => toggleGroup(group.label)}
+                    >
+                      <span className="permissions-group-title">{group.label}</span>
+                      <span className="permissions-group-summary">
+                        {group.permissions.filter(p => permissionsForm[p.key]).length}/{group.permissions.length}
+                      </span>
+                      {expandedGroups[group.label] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    {expandedGroups[group.label] && (
+                      <div className="permissions-group-items">
+                        {group.permissions.map(perm => (
+                          <label key={perm.key} className="permissions-item">
+                            <input
+                              type="checkbox"
+                              checked={!!permissionsForm[perm.key]}
+                              onChange={() => togglePermission(perm.key)}
+                            />
+                            <span>{perm.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="modal-actions" style={{ padding: '1rem 1.5rem' }}>
+                <button className="btn btn-primary" onClick={savePermissions}>
+                  <Save size={16} />
+                  שמירת הרשאות
+                </button>
+                <button className="btn btn-secondary" onClick={() => setPermissionsUser(null)}>
+                  ביטול
+                </button>
               </div>
             </div>
           </div>

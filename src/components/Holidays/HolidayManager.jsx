@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, writeBatch } from 'firebase/firestore';
+import { ISRAELI_HOLIDAYS } from '../../data/holidays';
 import Header from '../Layout/Header';
-import { Plus, Trash2, Edit3, Save, X, Search, Send, Calendar } from 'lucide-react';
+import { Plus, Trash2, Edit3, Save, X, Search, Send, Calendar, Filter, Download } from 'lucide-react';
 import './Holidays.css';
 
 const HOLIDAY_TYPES = {
@@ -33,6 +34,8 @@ export default function HolidayManager() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [searchQuery, setSearchQuery] = useState('');
   const [broadcasting, setBroadcasting] = useState(false);
+  const [activeReligionFilters, setActiveReligionFilters] = useState(Object.keys(HOLIDAY_TYPES));
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
 
   const schoolId = selectedSchool || userData?.schoolId;
   const admin = isGlobalAdmin();
@@ -134,13 +137,11 @@ export default function HolidayManager() {
         const targetCollection = `holidays_${schoolDoc.id}`;
         const batch = writeBatch(db);
 
-        // Delete existing holidays for this school
         const existingSnap = await getDocs(collection(db, targetCollection));
         existingSnap.docs.forEach(d => {
           batch.delete(doc(db, targetCollection, d.id));
         });
 
-        // Write new holidays
         globalHolidays.forEach(holiday => {
           const newRef = doc(collection(db, targetCollection));
           batch.set(newRef, {
@@ -161,6 +162,37 @@ export default function HolidayManager() {
     }
   }
 
+  async function loadDefaultHolidays() {
+    if (!confirm('פעולה זו תטען את כל חגי וחופשות משרד החינוך לשנת הלימודים תשפ"ו. להמשיך?')) return;
+
+    try {
+      for (const holiday of ISRAELI_HOLIDAYS) {
+        // Check if already exists by name and startDate
+        const exists = holidays.find(h => h.name === holiday.name && h.startDate === holiday.startDate);
+        if (!exists) {
+          await addDoc(collection(db, collectionName), {
+            ...holiday,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        }
+      }
+      alert('החגים נטענו בהצלחה!');
+    } catch (err) {
+      alert('שגיאה בטעינת החגים: ' + err.message);
+    }
+  }
+
+  function toggleReligionFilter(type) {
+    setActiveReligionFilters(prev => {
+      if (prev.includes(type)) {
+        const newFilters = prev.filter(t => t !== type);
+        return newFilters.length === 0 ? [type] : newFilters; // must have at least 1
+      }
+      return [...prev, type];
+    });
+  }
+
   function formatDate(dateStr) {
     if (!dateStr) return '—';
     try {
@@ -170,8 +202,11 @@ export default function HolidayManager() {
     }
   }
 
-  // Filter holidays by search
+  // Filter holidays by search and religion
   const filtered = holidays.filter(h => {
+    // Religion filter
+    if (!activeReligionFilters.includes(h.type)) return false;
+    // Search filter
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -181,22 +216,16 @@ export default function HolidayManager() {
     );
   });
 
-  // Group holidays by type
-  const grouped = {};
+  // Group by religion type for column display
+  const columnData = {};
   for (const type of Object.keys(HOLIDAY_TYPES)) {
-    const items = filtered.filter(h => h.type === type);
-    if (items.length > 0) {
-      grouped[type] = items;
+    if (activeReligionFilters.includes(type)) {
+      columnData[type] = filtered.filter(h => h.type === type);
     }
-  }
-  // Add any holidays with unrecognized types
-  const knownTypes = Object.keys(HOLIDAY_TYPES);
-  const uncategorized = filtered.filter(h => !knownTypes.includes(h.type));
-  if (uncategorized.length > 0) {
-    grouped['other'] = uncategorized;
   }
 
   const canEdit = admin || isPrincipal();
+  const activeColumnCount = Object.keys(columnData).length;
 
   return (
     <div className="page">
@@ -208,6 +237,12 @@ export default function HolidayManager() {
               <button className="btn btn-primary" onClick={openAdd}>
                 <Plus size={16} />
                 חג חדש
+              </button>
+            )}
+            {canEdit && holidays.length === 0 && (
+              <button className="btn holidays-load-btn" onClick={loadDefaultHolidays}>
+                <Download size={16} />
+                טען חגי משרד החינוך
               </button>
             )}
             {admin && (
@@ -222,6 +257,14 @@ export default function HolidayManager() {
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <button
+              className={`btn ${showFilterPanel ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setShowFilterPanel(!showFilterPanel)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+            >
+              <Filter size={14} />
+              סינון דתות
+            </button>
             <div className="search-bar">
               <Search size={14} />
               <input
@@ -234,78 +277,122 @@ export default function HolidayManager() {
           </div>
         </div>
 
-        {Object.keys(grouped).length === 0 && (
-          <div className="holidays-empty">
-            <Calendar size={40} />
-            <p>{searchQuery ? 'לא נמצאו תוצאות' : 'אין חגים עדיין'}</p>
+        {/* Religion Filter Panel */}
+        {showFilterPanel && (
+          <div className="holidays-filter-panel">
+            <span className="holidays-filter-label">בחרו את הדתות שיוצגו:</span>
+            <div className="holidays-filter-toggles">
+              {Object.entries(HOLIDAY_TYPES).map(([type, config]) => (
+                <button
+                  key={type}
+                  className={`holidays-filter-toggle ${activeReligionFilters.includes(type) ? 'holidays-filter-toggle--active' : ''}`}
+                  style={{
+                    '--filter-color': config.border,
+                    '--filter-bg': config.color,
+                  }}
+                  onClick={() => toggleReligionFilter(type)}
+                >
+                  <span
+                    className="holidays-filter-dot"
+                    style={{ background: config.border }}
+                  />
+                  {config.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        {Object.entries(grouped).map(([type, items]) => {
-          const typeConfig = HOLIDAY_TYPES[type] || { label: 'אחר', color: '#f1f5f9', border: '#94a3b8' };
-          return (
-            <div key={type} className="holidays-section">
-              <div className="holidays-section-header">
-                <span
-                  className="holidays-type-badge"
-                  style={{ background: typeConfig.color, color: typeConfig.border, borderColor: typeConfig.border }}
-                >
-                  {typeConfig.label}
-                </span>
-                <span className="holidays-section-count">{items.length}</span>
-              </div>
-              <div className="holidays-list">
-                {items.map(holiday => (
+        {filtered.length === 0 && (
+          <div className="holidays-empty">
+            <Calendar size={40} />
+            <p>{searchQuery ? 'לא נמצאו תוצאות' : 'אין חגים עדיין'}</p>
+            {!searchQuery && canEdit && (
+              <button className="btn btn-primary" onClick={loadDefaultHolidays} style={{ marginTop: '0.5rem' }}>
+                <Download size={16} />
+                טען חגי משרד החינוך תשפ"ו
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Column-based display by religion */}
+        {filtered.length > 0 && (
+          <div className="holidays-columns" style={{ gridTemplateColumns: `repeat(${activeColumnCount}, 1fr)` }}>
+            {Object.entries(columnData).map(([type, items]) => {
+              const typeConfig = HOLIDAY_TYPES[type];
+              return (
+                <div key={type} className="holidays-column">
                   <div
-                    key={holiday.id}
-                    className="holiday-item"
-                    style={{ borderRightColor: holiday.color || typeConfig.border }}
+                    className="holidays-column-header"
+                    style={{ background: typeConfig.color, borderColor: typeConfig.border }}
                   >
-                    <div className="holiday-item-main">
-                      <div className="holiday-item-info">
-                        <h4 className="holiday-item-name">{holiday.name}</h4>
-                        <div className="holiday-item-dates">
-                          <Calendar size={12} />
-                          <span>{formatDate(holiday.startDate)}</span>
-                          {holiday.endDate && holiday.endDate !== holiday.startDate && (
-                            <>
-                              <span className="holiday-date-sep">—</span>
-                              <span>{formatDate(holiday.endDate)}</span>
-                            </>
+                    <span
+                      className="holidays-type-badge"
+                      style={{ background: typeConfig.color, color: typeConfig.border, borderColor: typeConfig.border }}
+                    >
+                      {typeConfig.label}
+                    </span>
+                    <span className="holidays-section-count">{items.length}</span>
+                  </div>
+                  <div className="holidays-column-list">
+                    {items.length === 0 ? (
+                      <p className="holidays-column-empty">אין חגים מסוג זה</p>
+                    ) : (
+                      items.map(holiday => (
+                        <div
+                          key={holiday.id}
+                          className="holiday-item"
+                          style={{ borderRightColor: holiday.color || typeConfig.border }}
+                        >
+                          <div className="holiday-item-main">
+                            <div className="holiday-item-info">
+                              <h4 className="holiday-item-name">{holiday.name}</h4>
+                              <div className="holiday-item-dates">
+                                <Calendar size={12} />
+                                <span>{formatDate(holiday.startDate)}</span>
+                                {holiday.endDate && holiday.endDate !== holiday.startDate && (
+                                  <>
+                                    <span className="holiday-date-sep">—</span>
+                                    <span>{formatDate(holiday.endDate)}</span>
+                                  </>
+                                )}
+                              </div>
+                              {holiday.note && (
+                                <p className="holiday-item-note">{holiday.note}</p>
+                              )}
+                            </div>
+                            <div className="holiday-item-tags">
+                              {holiday.isVacation && (
+                                <span className="holiday-tag holiday-tag--vacation">חופשה</span>
+                              )}
+                              {!holiday.isSchoolDay && (
+                                <span className="holiday-tag holiday-tag--noschool">אין לימודים</span>
+                              )}
+                              {holiday.isSchoolDay && (
+                                <span className="holiday-tag holiday-tag--school">יום לימודים</span>
+                              )}
+                            </div>
+                          </div>
+                          {canEdit && (
+                            <div className="holiday-item-actions">
+                              <button className="icon-btn" title="עריכה" onClick={() => openEdit(holiday)}>
+                                <Edit3 size={15} />
+                              </button>
+                              <button className="icon-btn icon-btn--danger" title="מחיקה" onClick={() => handleDelete(holiday.id)}>
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
                           )}
                         </div>
-                        {holiday.note && (
-                          <p className="holiday-item-note">{holiday.note}</p>
-                        )}
-                      </div>
-                      <div className="holiday-item-tags">
-                        {holiday.isVacation && (
-                          <span className="holiday-tag holiday-tag--vacation">חופשה</span>
-                        )}
-                        {!holiday.isSchoolDay && (
-                          <span className="holiday-tag holiday-tag--noschool">אין לימודים</span>
-                        )}
-                        {holiday.isSchoolDay && (
-                          <span className="holiday-tag holiday-tag--school">יום לימודים</span>
-                        )}
-                      </div>
-                    </div>
-                    {canEdit && (
-                      <div className="holiday-item-actions">
-                        <button className="icon-btn" title="עריכה" onClick={() => openEdit(holiday)}>
-                          <Edit3 size={15} />
-                        </button>
-                        <button className="icon-btn icon-btn--danger" title="מחיקה" onClick={() => handleDelete(holiday.id)}>
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
+                      ))
                     )}
                   </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Add / Edit Modal */}
         {showModal && (

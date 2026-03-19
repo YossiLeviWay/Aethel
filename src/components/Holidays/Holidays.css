@@ -298,8 +298,131 @@
   user-select: none;
 }
 
+/* ===== Load button ===== */
+.holidays-load-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1.2rem;
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Inter', sans-serif;
+}
+
+.holidays-load-btn:hover {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+/* ===== Filter Panel ===== */
+.holidays-filter-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+}
+
+.holidays-filter-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.holidays-filter-toggles {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.holidays-filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.78rem;
+  font-family: 'Inter', sans-serif;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-weight: 600;
+}
+
+.holidays-filter-toggle:hover {
+  border-color: var(--filter-color, #93c5fd);
+}
+
+.holidays-filter-toggle--active {
+  background: var(--filter-bg, #eff6ff);
+  color: var(--filter-color, #2563eb);
+  border-color: var(--filter-color, #2563eb);
+}
+
+.holidays-filter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ===== Column Layout ===== */
+.holidays-columns {
+  display: grid;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.holidays-column {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.holidays-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid;
+}
+
+.holidays-column-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.holidays-column-empty {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  padding: 2rem 1rem;
+  margin: 0;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
+  .holidays-columns {
+    grid-template-columns: 1fr !important;
+  }
+
   .holidays-section {
     border-radius: 10px;
   }

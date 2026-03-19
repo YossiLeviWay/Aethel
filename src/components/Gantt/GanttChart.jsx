@@ -418,7 +418,7 @@ export default function GanttChart() {
                   style={{ width: `${(visibleColumnWidths[vi] / totalFlex) * 100}%` }}
                 >
                   <div className="gantt-day-header">
-                    {HEBREW_DAYS[di]}
+                    <span>{HEBREW_DAYS[di]}</span>
                     <div
                       className="gantt-resize-handle"
                       onMouseDown={e => handleColumnResize(di, e)}
@@ -466,7 +466,10 @@ export default function GanttChart() {
                           onClick={() => handleCellClick(date, cat)}
                         >
                           {ci === 0 && (
-                            <div className="gantt-cell-date">{date.getDate()}</div>
+                            <div className="gantt-cell-date">
+                              <span className="gantt-cell-daynum">{date.getDate()}</span>
+                              <span className="gantt-cell-fulldate">{date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                            </div>
                           )}
                           {cellHolidays.length > 0 && (
                             <div className="gantt-holiday-tag" title={cellHolidays.map(h => h.name).join(', ')}>

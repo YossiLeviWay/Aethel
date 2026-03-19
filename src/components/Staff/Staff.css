@@ -228,6 +228,88 @@
   flex-shrink: 0;
 }
 
+/* ===== Permissions Modal ===== */
+.permissions-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border-top: 1px solid #f1f5f9;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.permissions-group {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.permissions-group:last-child {
+  border-bottom: none;
+}
+
+.permissions-group-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.65rem 1.5rem;
+  background: #fafbfc;
+  border: none;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  gap: 0.5rem;
+  transition: background 0.15s;
+}
+
+.permissions-group-header:hover {
+  background: #f1f5f9;
+}
+
+.permissions-group-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e293b;
+  flex: 1;
+  text-align: right;
+}
+
+.permissions-group-summary {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.permissions-group-items {
+  padding: 0.25rem 1.5rem 0.5rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.permissions-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.permissions-item:hover {
+  background: #f8fafc;
+}
+
+.permissions-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563eb;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.permissions-item span {
+  font-size: 0.8rem;
+  color: #475569;
+  user-select: none;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
   .staff-grid {
