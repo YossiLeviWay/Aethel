@@ -121,15 +121,14 @@ export default function GanttChart() {
 
   function getEventsForCell(date, category) {
     const key = dateKey(date);
-    return events.filter(e => {
-      if (e.date !== key || e.category !== category) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        if (!(e.title || '').toLowerCase().includes(q) &&
-            !(e.description || '').toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
+    const cellEvents = events.filter(e => e.date === key && e.category === category);
+    if (!searchQuery.trim()) return cellEvents;
+    const q = searchQuery.toLowerCase();
+    return cellEvents.map(e => ({
+      ...e,
+      _searchMatch: (e.title || '').toLowerCase().includes(q) ||
+                     (e.description || '').toLowerCase().includes(q)
+    }));
   }
 
   // Filter categories based on filter
@@ -249,6 +248,15 @@ export default function GanttChart() {
   const weeks = getWeeksInMonth(year, month);
   const totalFlex = columnWidths.reduce((a, b) => a + b, 0);
 
+  // Count search matches for feedback
+  const searchMatchCount = searchQuery.trim()
+    ? events.filter(e => {
+        const q = searchQuery.toLowerCase();
+        return (e.title || '').toLowerCase().includes(q) ||
+               (e.description || '').toLowerCase().includes(q);
+      }).length
+    : 0;
+
   const years = [];
   for (let y = year - 3; y <= year + 3; y++) years.push(y);
 
@@ -292,6 +300,9 @@ export default function GanttChart() {
               placeholder="חיפוש אירוע..."
               style={{ fontSize: '0.78rem' }}
             />
+            {searchQuery.trim() && (
+              <span className="search-count">{searchMatchCount} תוצאות</span>
+            )}
           </div>
           {categories.length > 1 && (
             <select
@@ -386,7 +397,7 @@ export default function GanttChart() {
                           {cellEvents.map(ev => (
                             <div
                               key={ev.id}
-                              className="gantt-event"
+                              className={`gantt-event ${searchQuery.trim() ? (ev._searchMatch ? 'gantt-event--highlight' : 'gantt-event--dim') : ''}`}
                               style={{ background: ev.color || PASTEL_COLORS[0] }}
                               onClick={e => handleEventClick(e, ev)}
                               onMouseEnter={e => handleMouseEnter(e, ev)}

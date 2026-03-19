@@ -300,6 +300,23 @@
   transform: scale(1.02);
 }
 
+.gantt-event--highlight {
+  box-shadow: 0 0 0 2px #3b82f6, 0 0 8px rgba(59, 130, 246, 0.4);
+  z-index: 2;
+  transform: scale(1.04);
+}
+
+.gantt-event--dim {
+  opacity: 0.25;
+}
+
+.search-count {
+  font-size: 0.7rem;
+  color: #64748b;
+  white-space: nowrap;
+  padding-inline-start: 0.25rem;
+}
+
 /* ===== Tooltip ===== */
 .gantt-tooltip {
   position: fixed;

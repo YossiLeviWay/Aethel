@@ -43,9 +43,15 @@ export default function ExcelWriter() {
     if (activeSheet) {
       const sheet = sheets.find(s => s.id === activeSheet);
       if (sheet) {
+        let rows;
+        try {
+          rows = sheet.rowsJson ? JSON.parse(sheet.rowsJson) : (sheet.rows || [['', '', '']]);
+        } catch {
+          rows = [['', '', '']];
+        }
         setSheetData({
           columns: sheet.columns || ['עמודה 1', 'עמודה 2', 'עמודה 3'],
-          rows: sheet.rows || [['', '', '']]
+          rows
         });
       }
     }
@@ -60,7 +66,7 @@ export default function ExcelWriter() {
       const newDoc = await addDoc(collection(db, `sheets_${schoolId}`), {
         name,
         columns: ['עמודה 1', 'עמודה 2', 'עמודה 3'],
-        rows: [['', '', '']],
+        rowsJson: JSON.stringify([['', '', '']]),
         createdBy: userData?.fullName || '',
         createdAt: new Date().toISOString()
       });
@@ -79,7 +85,7 @@ export default function ExcelWriter() {
     try {
       await updateDoc(doc(db, `sheets_${schoolId}`, activeSheet), {
         columns: sheetData.columns,
-        rows: sheetData.rows
+        rowsJson: JSON.stringify(sheetData.rows)
       });
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message);

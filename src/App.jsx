@@ -11,6 +11,7 @@ import TaskBoard from './components/Tasks/TaskBoard';
 import FileManager from './components/Files/FileManager';
 import ExcelWriter from './components/DataMapper/ExcelWriter';
 import SchoolManagement from './components/Schools/SchoolManagement';
+import Teams from './components/Teams/Teams';
 import Settings from './components/Settings/Settings';
 
 function ProtectedRoute({ children }) {
@@ -76,6 +77,7 @@ export default function App() {
             <Route path="tasks" element={<SchoolRequiredRoute><TaskBoard /></SchoolRequiredRoute>} />
             <Route path="files" element={<SchoolRequiredRoute><FileManager /></SchoolRequiredRoute>} />
             <Route path="data" element={<SchoolRequiredRoute><ExcelWriter /></SchoolRequiredRoute>} />
+            <Route path="teams" element={<SchoolRequiredRoute><Teams /></SchoolRequiredRoute>} />
             <Route path="schools" element={<AdminRoute><SchoolManagement /></AdminRoute>} />
             <Route path="settings" element={<Settings />} />
           </Route>

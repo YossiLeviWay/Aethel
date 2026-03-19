@@ -174,8 +174,8 @@ export const ISRAELI_HOLIDAYS = [
   {
     name: 'עיד אל-פיטר',
     nameEn: 'Eid al-Fitr',
-    startDate: '2026-03-30',
-    endDate: '2026-04-01',
+    startDate: '2026-03-20',
+    endDate: '2026-03-21',
     type: 'muslim',
     isVacation: false,
     isSchoolDay: false,
@@ -185,8 +185,8 @@ export const ISRAELI_HOLIDAYS = [
   {
     name: 'עיד אל-אדחא',
     nameEn: 'Eid al-Adha',
-    startDate: '2026-06-06',
-    endDate: '2026-06-08',
+    startDate: '2026-05-27',
+    endDate: '2026-05-30',
     type: 'muslim',
     isVacation: false,
     isSchoolDay: false,
@@ -207,8 +207,8 @@ export const ISRAELI_HOLIDAYS = [
   {
     name: 'תחילת הרמדאן',
     nameEn: 'Ramadan Start',
-    startDate: '2026-02-28',
-    endDate: '2026-02-28',
+    startDate: '2026-02-18',
+    endDate: '2026-02-18',
     type: 'muslim',
     isVacation: false,
     isSchoolDay: false,

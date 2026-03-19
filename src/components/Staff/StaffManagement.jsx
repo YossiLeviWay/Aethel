@@ -9,12 +9,13 @@ import {
   updateDoc,
   deleteDoc,
   addDoc,
-  doc
+  doc,
+  setDoc
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebase';
 import Header from '../Layout/Header';
-import { Plus, Edit3, Trash2, Shield, Eye, Search, X, UserPlus } from 'lucide-react';
+import { Plus, Edit3, Trash2, Shield, Eye, Search, X, UserPlus, CheckCircle, XCircle } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Staff.css';
 
@@ -26,27 +27,79 @@ const ROLE_LABELS = {
 };
 
 export default function StaffManagement() {
-  const { userData, selectedSchool, isPrincipal, isGlobalAdmin } = useAuth();
+  const { userData, selectedSchool, isPrincipal, isGlobalAdmin, approveUser, rejectUser } = useAuth();
   const [staff, setStaff] = useState([]);
+  const [pendingUsers, setPendingUsers] = useState([]);
   const [editingUser, setEditingUser] = useState(null);
   const [editForm, setEditForm] = useState({ role: '', jobTitle: '' });
   const [viewMode, setViewMode] = useState('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({ fullName: '', email: '', jobTitle: '', role: 'viewer' });
+  const [addForm, setAddForm] = useState({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '' });
   const [addError, setAddError] = useState('');
+  const [schools, setSchools] = useState([]);
 
   const schoolId = selectedSchool || userData?.schoolId;
 
   useEffect(() => {
     if (!schoolId) return;
     loadStaff();
+    loadPendingUsers();
   }, [schoolId]);
 
+  useEffect(() => {
+    loadSchools();
+  }, []);
+
+  async function loadSchools() {
+    try {
+      const snap = await getDocs(collection(db, 'schools'));
+      setSchools(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error('Error loading schools:', err);
+    }
+  }
+
   async function loadStaff() {
-    const q = query(collection(db, 'users'), where('schoolId', '==', schoolId));
+    // Query with new schoolIds array-contains
+    const q1 = query(collection(db, 'users'), where('schoolIds', 'array-contains', schoolId));
+    const snap1 = await getDocs(q1);
+    const staffMap = new Map();
+    snap1.docs.forEach(d => staffMap.set(d.id, { id: d.id, ...d.data() }));
+
+    // Fallback: also query with old schoolId field for backward compatibility
+    const q2 = query(collection(db, 'users'), where('schoolId', '==', schoolId));
+    const snap2 = await getDocs(q2);
+    snap2.docs.forEach(d => {
+      if (!staffMap.has(d.id)) {
+        const data = d.data();
+        // Only include if not in pendingSchools for this school (i.e., actually approved via old schema)
+        const pending = data.pendingSchools || [];
+        if (!pending.includes(schoolId)) {
+          staffMap.set(d.id, { id: d.id, ...data });
+        }
+      }
+    });
+
+    setStaff(Array.from(staffMap.values()));
+  }
+
+  async function loadPendingUsers() {
+    const q = query(collection(db, 'users'), where('pendingSchools', 'array-contains', schoolId));
     const snap = await getDocs(q);
-    setStaff(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    setPendingUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  }
+
+  async function handleApprove(userId) {
+    await approveUser(userId, schoolId);
+    loadStaff();
+    loadPendingUsers();
+  }
+
+  async function handleReject(userId) {
+    if (!confirm('האם לדחות את בקשת המשתמש?')) return;
+    await rejectUser(userId, schoolId);
+    loadPendingUsers();
   }
 
   async function handleUpdateRole(userId) {
@@ -74,25 +127,29 @@ export default function StaffManagement() {
     if (!addForm.fullName.trim() || !addForm.email.trim()) return;
     setAddError('');
 
+    const targetSchoolId = addForm.schoolId || schoolId;
+
     try {
       // Create a temporary password - user should reset
       const tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
       const cred = await createUserWithEmailAndPassword(auth, addForm.email, tempPassword);
 
-      await addDoc(collection(db, 'users'), {
+      await setDoc(doc(db, 'users', cred.user.uid), {
         uid: cred.user.uid,
         email: addForm.email,
         fullName: addForm.fullName,
         jobTitle: addForm.jobTitle,
         role: addForm.role,
-        schoolId,
+        schoolId: targetSchoolId,
+        schoolIds: [targetSchoolId],
+        pendingSchools: [],
         phone: '',
         avatar: '',
         createdAt: new Date().toISOString()
       });
 
       setShowAddModal(false);
-      setAddForm({ fullName: '', email: '', jobTitle: '', role: 'viewer' });
+      setAddForm({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '' });
       loadStaff();
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
@@ -105,6 +162,7 @@ export default function StaffManagement() {
 
   const canEdit = isPrincipal() || isGlobalAdmin();
   const isAdmin = isGlobalAdmin();
+  const canApprove = isPrincipal() || isGlobalAdmin();
 
   // Filter staff based on search
   const filteredStaff = staff.filter(user => {
@@ -157,6 +215,63 @@ export default function StaffManagement() {
             <span className="staff-count">{filteredStaff.length} אנשי צוות</span>
           </div>
         </div>
+
+        {/* Pending Approval Section */}
+        {canApprove && pendingUsers.length > 0 && (
+          <div className="pending-approval-section" style={{ marginBottom: '1.5rem', padding: '1rem', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 8 }}>
+            <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', color: '#92400e' }}>
+              ממתינים לאישור ({pendingUsers.length})
+            </h3>
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>שם</th>
+                    <th>תפקיד</th>
+                    <th>דוא"ל</th>
+                    <th>פעולות</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingUsers.map(user => (
+                    <tr key={user.id}>
+                      <td className="td-bold">
+                        <div className="td-user">
+                          <div className="td-avatar">{user.fullName?.charAt(0)}</div>
+                          {user.fullName}
+                        </div>
+                      </td>
+                      <td>{user.jobTitle || '—'}</td>
+                      <td dir="ltr">{user.email}</td>
+                      <td>
+                        <div className="td-actions" style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => handleApprove(user.id)}
+                            title="אישור"
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                          >
+                            <CheckCircle size={14} />
+                            אישור
+                          </button>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleReject(user.id)}
+                            title="דחייה"
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#ef4444' }}
+                          >
+                            <XCircle size={14} />
+                            דחייה
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {viewMode === 'grid' ? (
           <div className="staff-grid">
@@ -298,6 +413,18 @@ export default function StaffManagement() {
                       onChange={e => setAddForm(prev => ({ ...prev, jobTitle: e.target.value }))}
                       placeholder="תפקיד"
                     />
+                  </div>
+                  <div className="form-group">
+                    <label>מוסד</label>
+                    <select
+                      value={addForm.schoolId}
+                      onChange={e => setAddForm(prev => ({ ...prev, schoolId: e.target.value }))}
+                    >
+                      <option value="">מוסד נוכחי</option>
+                      {schools.map(s => (
+                        <option key={s.id} value={s.id}>{s.name || s.id}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-group">
                     <label>הרשאה</label>

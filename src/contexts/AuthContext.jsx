@@ -10,10 +10,13 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   collection,
   query,
   where,
-  getDocs
+  getDocs,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 
 const AuthContext = createContext();
@@ -32,13 +35,16 @@ export function AuthProvider({ children }) {
 
   async function register(email, password, userInfo) {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
+    const schoolId = userInfo.schoolId || '';
     const userDoc = {
       uid: cred.user.uid,
       email,
       fullName: userInfo.fullName,
       role: 'viewer',
       jobTitle: userInfo.jobTitle || '',
-      schoolId: userInfo.schoolId || '',
+      schoolId: schoolId,
+      schoolIds: [],
+      pendingSchools: schoolId ? [schoolId] : [],
       phone: userInfo.phone || '',
       avatar: '',
       createdAt: new Date().toISOString()
@@ -67,6 +73,8 @@ export function AuthProvider({ children }) {
         role: 'global_admin',
         jobTitle: 'מנהל על',
         schoolId: '',
+        schoolIds: [],
+        pendingSchools: [],
         phone: '',
         avatar: '',
         createdAt: new Date().toISOString()
@@ -86,12 +94,30 @@ export function AuthProvider({ children }) {
     if (docSnap.exists()) {
       const data = docSnap.data();
       setUserData(data);
-      if (data.schoolId) {
+      // Handle both new schoolIds array and old schoolId field
+      if (data.schoolIds && data.schoolIds.length > 0) {
+        setSelectedSchool(data.schoolIds[0]);
+      } else if (data.schoolId) {
         setSelectedSchool(data.schoolId);
       }
       return data;
     }
     return null;
+  }
+
+  async function approveUser(userId, schoolId) {
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      pendingSchools: arrayRemove(schoolId),
+      schoolIds: arrayUnion(schoolId)
+    });
+  }
+
+  async function rejectUser(userId, schoolId) {
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      pendingSchools: arrayRemove(schoolId)
+    });
   }
 
   function switchSchool(schoolId) {
@@ -136,7 +162,9 @@ export function AuthProvider({ children }) {
     isGlobalAdmin,
     isPrincipal,
     isEditor,
-    fetchUserData
+    fetchUserData,
+    approveUser,
+    rejectUser
   };
 
   return (

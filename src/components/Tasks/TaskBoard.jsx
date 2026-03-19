@@ -10,11 +10,12 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  orderBy
+  orderBy,
+  getDocs
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
 import ChatPanel from './ChatPanel';
-import { Plus, Trash2, MessageSquare, Clock, AlertTriangle, AlertCircle, ChevronDown, X, Search, Filter } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Clock, AlertTriangle, AlertCircle, ChevronDown, X, Search, Filter, Users } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Tasks.css';
 
@@ -30,6 +31,12 @@ const STATUS_CONFIG = {
   done: { label: 'הושלם', color: '#22c55e' }
 };
 
+const ASSIGNEE_TYPES = {
+  all_school: 'כל בית הספר',
+  team: 'צוות',
+  individual: 'אנשי צוות'
+};
+
 export default function TaskBoard() {
   const { userData, selectedSchool } = useAuth();
   const [tasks, setTasks] = useState([]);
@@ -38,13 +45,17 @@ export default function TaskBoard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
+  const [staff, setStaff] = useState([]);
+  const [teams, setTeams] = useState([]);
   const [form, setForm] = useState({
     title: '',
     description: '',
     priority: 'medium',
     status: 'todo',
     dueDate: '',
-    assignee: ''
+    assigneeType: 'all_school',
+    assigneeIds: [],
+    assigneeTeamId: ''
   });
 
   const schoolId = selectedSchool || userData?.schoolId;
@@ -61,19 +72,68 @@ export default function TaskBoard() {
     return unsub;
   }, [schoolId]);
 
+  // Load staff
+  useEffect(() => {
+    if (!schoolId) return;
+    async function fetchStaff() {
+      const results = [];
+      const seen = new Set();
+      try {
+        const q1 = query(collection(db, 'users'), where('schoolIds', 'array-contains', schoolId));
+        const snap1 = await getDocs(q1);
+        snap1.docs.forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); results.push({ id: d.id, ...d.data() }); } });
+      } catch {}
+      try {
+        const q2 = query(collection(db, 'users'), where('schoolId', '==', schoolId));
+        const snap2 = await getDocs(q2);
+        snap2.docs.forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); results.push({ id: d.id, ...d.data() }); } });
+      } catch {}
+      setStaff(results);
+    }
+    fetchStaff();
+  }, [schoolId]);
+
+  // Load teams
+  useEffect(() => {
+    if (!schoolId) return;
+    const unsub = onSnapshot(collection(db, `teams_${schoolId}`), (snap) => {
+      setTeams(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, [schoolId]);
+
   function handleChange(e) {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  }
+
+  function toggleAssignee(userId) {
+    setForm(prev => {
+      const ids = prev.assigneeIds.includes(userId)
+        ? prev.assigneeIds.filter(id => id !== userId)
+        : [...prev.assigneeIds, userId];
+      return { ...prev, assigneeIds: ids };
+    });
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.title.trim() || !schoolId) return;
-    await addDoc(collection(db, `tasks_${schoolId}`), {
-      ...form,
+
+    const taskData = {
+      title: form.title,
+      description: form.description,
+      priority: form.priority,
+      status: form.status,
+      dueDate: form.dueDate,
+      assigneeType: form.assigneeType,
+      assigneeIds: form.assigneeType === 'individual' ? form.assigneeIds : [],
+      assigneeTeamId: form.assigneeType === 'team' ? form.assigneeTeamId : '',
       createdBy: userData?.fullName || '',
       createdAt: new Date().toISOString()
-    });
-    setForm({ title: '', description: '', priority: 'medium', status: 'todo', dueDate: '', assignee: '' });
+    };
+
+    await addDoc(collection(db, `tasks_${schoolId}`), taskData);
+    setForm({ title: '', description: '', priority: 'medium', status: 'todo', dueDate: '', assigneeType: 'all_school', assigneeIds: [], assigneeTeamId: '' });
     setShowForm(false);
   }
 
@@ -91,16 +151,41 @@ export default function TaskBoard() {
     return new Date(dueDate) < new Date() && new Date(dueDate).toDateString() !== new Date().toDateString();
   }
 
+  function getAssigneeDisplay(task) {
+    // Support old format (simple string)
+    if (task.assignee && !task.assigneeType) {
+      return task.assignee;
+    }
+
+    if (task.assigneeType === 'all_school') {
+      return 'כל בית הספר';
+    }
+    if (task.assigneeType === 'team') {
+      const team = teams.find(t => t.id === task.assigneeTeamId);
+      return team ? team.name : 'צוות';
+    }
+    if (task.assigneeType === 'individual' && task.assigneeIds?.length > 0) {
+      const names = task.assigneeIds.map(id => {
+        const user = staff.find(u => u.id === id || u.uid === id);
+        return user?.fullName || id;
+      });
+      if (names.length <= 2) return names.join(', ');
+      return `${names[0]} +${names.length - 1}`;
+    }
+    return '';
+  }
+
   // Filter tasks
   const filteredTasks = tasks.filter(task => {
     if (filterStatus !== 'all' && task.status !== filterStatus) return false;
     if (filterPriority !== 'all' && task.priority !== filterPriority) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
+      const assigneeText = getAssigneeDisplay(task).toLowerCase();
       return (
         (task.title || '').toLowerCase().includes(q) ||
         (task.description || '').toLowerCase().includes(q) ||
-        (task.assignee || '').toLowerCase().includes(q)
+        assigneeText.includes(q)
       );
     }
     return true;
@@ -176,11 +261,53 @@ export default function TaskBoard() {
                   <label>תאריך יעד</label>
                   <input name="dueDate" type="date" value={form.dueDate} onChange={handleChange} dir="ltr" />
                 </div>
-                <div className="form-group">
-                  <label>אחראי</label>
-                  <input name="assignee" value={form.assignee} onChange={handleChange} placeholder="שם" />
-                </div>
               </div>
+
+              {/* Assignee Section */}
+              <div className="form-group">
+                <label>שיוך משימה</label>
+                <select name="assigneeType" value={form.assigneeType} onChange={handleChange}>
+                  <option value="all_school">כל בית הספר</option>
+                  <option value="team">צוות ספציפי</option>
+                  <option value="individual">אנשי צוות ספציפיים</option>
+                </select>
+              </div>
+
+              {form.assigneeType === 'team' && (
+                <div className="form-group">
+                  <label>בחירת צוות</label>
+                  <select name="assigneeTeamId" value={form.assigneeTeamId} onChange={handleChange}>
+                    <option value="">בחרו צוות</option>
+                    {teams.map(t => (
+                      <option key={t.id} value={t.id}>{t.name} ({(t.memberIds || []).length} חברים)</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {form.assigneeType === 'individual' && (
+                <div className="form-group">
+                  <label>בחירת אנשי צוות</label>
+                  <div className="assignee-picker">
+                    {staff.map(u => {
+                      const userId = u.uid || u.id;
+                      const isSelected = form.assigneeIds.includes(userId);
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          className={`assignee-chip ${isSelected ? 'assignee-chip--selected' : ''}`}
+                          onClick={() => toggleAssignee(userId)}
+                        >
+                          <span className="assignee-chip-avatar">{u.fullName?.charAt(0)}</span>
+                          {u.fullName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="form-actions">
                 <button type="submit" className="btn btn-primary">הוספה</button>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>ביטול</button>
@@ -195,6 +322,7 @@ export default function TaskBoard() {
             const status = STATUS_CONFIG[task.status] || STATUS_CONFIG.todo;
             const PrioIcon = prio.icon;
             const overdue = task.status !== 'done' && isOverdue(task.dueDate);
+            const assigneeDisplay = getAssigneeDisplay(task);
 
             return (
               <div key={task.id} className={`task-row ${overdue ? 'task-row--overdue' : ''}`}>
@@ -206,7 +334,12 @@ export default function TaskBoard() {
                   <div className="task-title">{task.title}</div>
                   {task.description && <div className="task-desc">{task.description}</div>}
                   <div className="task-meta">
-                    {task.assignee && <span className="task-assignee">{task.assignee}</span>}
+                    {assigneeDisplay && (
+                      <span className="task-assignee">
+                        {task.assigneeType === 'team' && <Users size={11} style={{ marginLeft: '0.2rem', verticalAlign: 'middle' }} />}
+                        {assigneeDisplay}
+                      </span>
+                    )}
                     {task.dueDate && (
                       <span className={`task-due ${overdue ? 'task-due--late' : ''}`}>
                         {new Date(task.dueDate).toLocaleDateString('he-IL')}

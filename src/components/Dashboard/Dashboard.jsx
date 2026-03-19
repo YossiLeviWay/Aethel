@@ -1,10 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  orderBy,
+  limit,
+  updateDoc,
+  doc,
+  arrayUnion,
+  arrayRemove
+} from 'firebase/firestore';
 import { getUpcomingHolidays, getHolidaysForMonth } from '../../data/holidays';
 import Header from '../Layout/Header';
-import { Calendar, CheckSquare, Users, Clock, Star, BookOpen } from 'lucide-react';
+import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck } from 'lucide-react';
 import './Dashboard.css';
 
 function getGreeting() {
@@ -49,13 +60,15 @@ const HOLIDAY_BORDER_COLORS = {
 };
 
 export default function Dashboard() {
-  const { userData, selectedSchool } = useAuth();
+  const { userData, selectedSchool, isGlobalAdmin, isPrincipal, approveUser, rejectUser } = useAuth();
   const [events, setEvents] = useState([]);
   const [taskStats, setTaskStats] = useState({ total: 0, pending: 0, completed: 0, overdue: 0 });
   const [staffCount, setStaffCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [holidays, setHolidays] = useState([]);
   const [todayHolidays, setTodayHolidays] = useState([]);
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [schools, setSchools] = useState([]);
 
   useEffect(() => {
     const upcoming = getUpcomingHolidays(5);
@@ -66,6 +79,54 @@ export default function Dashboard() {
     const todayMatches = upcoming.filter(h => h.startDate <= todayStr && h.endDate >= todayStr);
     setTodayHolidays(todayMatches);
   }, []);
+
+  // Load schools list for mapping IDs to names
+  useEffect(() => {
+    async function loadSchools() {
+      try {
+        const snap = await getDocs(collection(db, 'schools'));
+        setSchools(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.error('Error loading schools:', err);
+      }
+    }
+    loadSchools();
+  }, []);
+
+  // Fetch pending users for admin/principal
+  useEffect(() => {
+    if (!isGlobalAdmin() && !isPrincipal()) {
+      setPendingUsers([]);
+      return;
+    }
+
+    async function fetchPendingUsers() {
+      try {
+        if (isGlobalAdmin()) {
+          // Admin sees ALL pending users across all schools
+          const usersRef = collection(db, 'users');
+          const snap = await getDocs(usersRef);
+          const pending = snap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(u => u.pendingSchools && u.pendingSchools.length > 0);
+          setPendingUsers(pending);
+        } else if (isPrincipal() && selectedSchool) {
+          // Principal sees only pending users for their school(s)
+          const userSchools = userData?.schoolIds || [];
+          const schoolId = selectedSchool || (userSchools.length > 0 ? userSchools[0] : userData?.schoolId);
+          if (schoolId) {
+            const q = query(collection(db, 'users'), where('pendingSchools', 'array-contains', schoolId));
+            const snap = await getDocs(q);
+            setPendingUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching pending users:', err);
+      }
+    }
+
+    fetchPendingUsers();
+  }, [selectedSchool, userData]);
 
   useEffect(() => {
     if (!selectedSchool) {
@@ -100,11 +161,25 @@ export default function Dashboard() {
         }).length;
         setTaskStats({ total: tasks.length, pending, completed, overdue });
 
-        // Fetch staff count
+        // Fetch staff count - query with new schoolIds array-contains
         const staffRef = collection(db, 'users');
-        const staffQuery = query(staffRef, where('schoolId', '==', selectedSchool));
-        const staffSnap = await getDocs(staffQuery);
-        setStaffCount(staffSnap.size);
+        const staffQuery1 = query(staffRef, where('schoolIds', 'array-contains', selectedSchool));
+        const staffSnap1 = await getDocs(staffQuery1);
+        const staffIds = new Set(staffSnap1.docs.map(d => d.id));
+
+        // Fallback: also query with old schoolId field for backward compatibility
+        const staffQuery2 = query(staffRef, where('schoolId', '==', selectedSchool));
+        const staffSnap2 = await getDocs(staffQuery2);
+        staffSnap2.docs.forEach(d => {
+          const data = d.data();
+          const pending = data.pendingSchools || [];
+          // Only count if not pending (i.e., approved via old schema)
+          if (!pending.includes(selectedSchool)) {
+            staffIds.add(d.id);
+          }
+        });
+
+        setStaffCount(staffIds.size);
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
       } finally {
@@ -114,6 +189,42 @@ export default function Dashboard() {
 
     fetchData();
   }, [selectedSchool]);
+
+  function getSchoolName(schoolId) {
+    const school = schools.find(s => s.id === schoolId);
+    return school?.name || schoolId;
+  }
+
+  async function handleApprove(userId, schoolId) {
+    await approveUser(userId, schoolId);
+    // Refresh pending users list
+    setPendingUsers(prev => {
+      return prev.map(u => {
+        if (u.id === userId) {
+          const newPending = (u.pendingSchools || []).filter(s => s !== schoolId);
+          if (newPending.length === 0) return null;
+          return { ...u, pendingSchools: newPending };
+        }
+        return u;
+      }).filter(Boolean);
+    });
+  }
+
+  async function handleReject(userId, schoolId) {
+    if (!confirm('האם לדחות את בקשת המשתמש?')) return;
+    await rejectUser(userId, schoolId);
+    // Refresh pending users list
+    setPendingUsers(prev => {
+      return prev.map(u => {
+        if (u.id === userId) {
+          const newPending = (u.pendingSchools || []).filter(s => s !== schoolId);
+          if (newPending.length === 0) return null;
+          return { ...u, pendingSchools: newPending };
+        }
+        return u;
+      }).filter(Boolean);
+    });
+  }
 
   if (!selectedSchool) {
     return (
@@ -136,6 +247,8 @@ export default function Dashboard() {
     day: 'numeric',
   });
 
+  const canApprove = isGlobalAdmin() || isPrincipal();
+
   return (
     <div className="page">
       <Header title="דשבורד" />
@@ -149,6 +262,106 @@ export default function Dashboard() {
             <p className="welcome-date">{todayDate}</p>
           </div>
         </div>
+
+        {/* Pending Approvals Section */}
+        {canApprove && pendingUsers.length > 0 && (
+          <div className="pending-approval-section" style={{ marginBottom: '1.5rem', padding: '1rem', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <UserCheck size={18} style={{ color: '#92400e' }} />
+              <h3 style={{ margin: 0, fontSize: '0.95rem', color: '#92400e' }}>
+                ממתינים לאישור ({pendingUsers.length})
+              </h3>
+            </div>
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>שם</th>
+                    <th>דוא"ל</th>
+                    <th>תפקיד</th>
+                    {isGlobalAdmin() && <th>מוסד</th>}
+                    <th>פעולות</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingUsers.map(user => {
+                    // For admin: show each pending school as a separate row
+                    const pendingSchoolIds = user.pendingSchools || [];
+                    if (isGlobalAdmin()) {
+                      return pendingSchoolIds.map(psId => (
+                        <tr key={`${user.id}-${psId}`}>
+                          <td className="td-bold">
+                            <div className="td-user">
+                              <div className="td-avatar">{user.fullName?.charAt(0)}</div>
+                              {user.fullName}
+                            </div>
+                          </td>
+                          <td dir="ltr">{user.email}</td>
+                          <td>{user.jobTitle || '—'}</td>
+                          <td>{getSchoolName(psId)}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => handleApprove(user.id, psId)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                              >
+                                <CheckCircle size={14} />
+                                אישור
+                              </button>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => handleReject(user.id, psId)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#ef4444' }}
+                              >
+                                <XCircle size={14} />
+                                דחייה
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ));
+                    } else {
+                      // Principal: show for the selected school only
+                      return (
+                        <tr key={user.id}>
+                          <td className="td-bold">
+                            <div className="td-user">
+                              <div className="td-avatar">{user.fullName?.charAt(0)}</div>
+                              {user.fullName}
+                            </div>
+                          </td>
+                          <td dir="ltr">{user.email}</td>
+                          <td>{user.jobTitle || '—'}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => handleApprove(user.id, selectedSchool)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                              >
+                                <CheckCircle size={14} />
+                                אישור
+                              </button>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => handleReject(user.id, selectedSchool)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#ef4444' }}
+                              >
+                                <XCircle size={14} />
+                                דחייה
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Today Highlight */}
         {todayHolidays.length > 0 && (

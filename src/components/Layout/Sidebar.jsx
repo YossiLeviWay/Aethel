@@ -27,6 +27,7 @@ const NAV_ITEMS = [
   { path: '/tasks', icon: CheckSquare, label: 'משימות', requiresSchool: true },
   { path: '/files', icon: FolderOpen, label: 'קבצים', requiresSchool: true },
   { path: '/data', icon: Table2, label: 'מיפוי נתונים', requiresSchool: true },
+  { path: '/teams', icon: Users, label: 'צוותים', requiresSchool: true },
   { path: '/schools', icon: School, label: 'ניהול מוסדות', roles: ['global_admin'] },
   { path: '/settings', icon: Settings, label: 'הגדרות', all: true }
 ];
