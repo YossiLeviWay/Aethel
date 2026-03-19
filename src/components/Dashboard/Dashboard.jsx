@@ -260,7 +260,6 @@ export default function Dashboard() {
 
         // 4. Fetch recent events across all schools
         const allEvents = [];
-        const today = new Date().toISOString().split('T')[0];
         for (const school of allSchools) {
           try {
             const eventsRef = collection(db, `events_${school.id}`);
