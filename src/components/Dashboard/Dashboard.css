@@ -341,6 +341,77 @@
   white-space: nowrap;
 }
 
+/* Activity Feed */
+.activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.activity-item:hover {
+  background: #f8fafc;
+}
+
+.activity-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.activity-icon--school {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.activity-icon--principal {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.activity-icon--staff {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.activity-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-text {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.activity-detail {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.activity-time {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .dashboard-stats {

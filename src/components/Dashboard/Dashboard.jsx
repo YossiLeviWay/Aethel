@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import Header from '../Layout/Header';
-import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck } from 'lucide-react';
+import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck, Activity, School, UserPlus, Shield } from 'lucide-react';
 import './Dashboard.css';
 
 function getGreeting() {
@@ -42,6 +42,19 @@ function getDaysUntil(dateStr) {
   if (diff === 0) return 'היום';
   if (diff === 1) return 'מחר';
   return `בעוד ${diff} ימים`;
+}
+
+function formatActivityDate(dateStr) {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return 'היום';
+  if (diffDays === 1) return 'אתמול';
+  if (diffDays < 7) return `לפני ${diffDays} ימים`;
+  if (diffDays < 30) return `לפני ${Math.floor(diffDays / 7)} שבועות`;
+  return date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' });
 }
 
 const HOLIDAY_TYPE_LABELS = {
@@ -71,6 +84,8 @@ export default function Dashboard() {
   const [todayHolidays, setTodayHolidays] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   const [schools, setSchools] = useState([]);
+  const [activityFeed, setActivityFeed] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   useEffect(() => {
     if (!selectedSchool) return;
@@ -142,6 +157,95 @@ export default function Dashboard() {
     }
 
     fetchPendingUsers();
+  }, [selectedSchool, userData]);
+
+  // Activity feed for global admin - shows significant events across all schools
+  useEffect(() => {
+    if (!isGlobalAdmin()) return;
+
+    async function fetchActivityFeed() {
+      setActivityLoading(true);
+      try {
+        const feed = [];
+        const schoolsSnap = await getDocs(collection(db, 'schools'));
+        const allSchools = schoolsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // 1. Recently added schools
+        for (const school of allSchools) {
+          if (school.createdAt) {
+            feed.push({
+              type: 'new_school',
+              icon: 'school',
+              text: `בית ספר חדש נוסף: ${school.name || school.id}`,
+              date: school.createdAt,
+              schoolName: school.name || school.id,
+            });
+          }
+        }
+
+        // 2. Recently added staff (principals, editors) across all schools
+        const usersSnap = await getDocs(collection(db, 'users'));
+        const allUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        for (const user of allUsers) {
+          if (!user.createdAt) continue;
+          const userSchoolIds = user.schoolIds || (user.schoolId ? [user.schoolId] : []);
+          const schoolNames = userSchoolIds
+            .map(sid => allSchools.find(s => s.id === sid)?.name || sid)
+            .filter(Boolean);
+          const schoolLabel = schoolNames.length > 0 ? schoolNames.join(', ') : '';
+
+          if (user.role === 'principal') {
+            feed.push({
+              type: 'new_principal',
+              icon: 'principal',
+              text: `מנהל חדש נוסף: ${user.fullName}`,
+              detail: schoolLabel ? `ב${schoolLabel}` : '',
+              date: user.createdAt,
+              schoolName: schoolLabel,
+            });
+          } else if (user.role === 'editor') {
+            feed.push({
+              type: 'new_editor',
+              icon: 'staff',
+              text: `עורך חדש נוסף: ${user.fullName}`,
+              detail: schoolLabel ? `ב${schoolLabel}` : '',
+              date: user.createdAt,
+              schoolName: schoolLabel,
+            });
+          } else if (user.role !== 'global_admin') {
+            feed.push({
+              type: 'new_staff',
+              icon: 'staff',
+              text: `איש צוות חדש: ${user.fullName}`,
+              detail: schoolLabel ? `ב${schoolLabel}` : '',
+              date: user.createdAt,
+              schoolName: schoolLabel,
+            });
+          }
+        }
+
+        // 3. Count staff per school for summary stats
+        const schoolStaffCounts = {};
+        for (const school of allSchools) {
+          const count = allUsers.filter(u => {
+            const sids = u.schoolIds || [];
+            return sids.includes(school.id) || u.schoolId === school.id;
+          }).length;
+          schoolStaffCounts[school.id] = count;
+        }
+
+        // Sort by date descending, take latest 20
+        feed.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        setActivityFeed(feed.slice(0, 20));
+      } catch (err) {
+        console.error('Error fetching activity feed:', err);
+      } finally {
+        setActivityLoading(false);
+      }
+    }
+
+    fetchActivityFeed();
   }, [selectedSchool, userData]);
 
   useEffect(() => {
@@ -528,6 +632,40 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Admin Activity Feed */}
+        {isGlobalAdmin() && (
+          <div className="dashboard-section" style={{ marginTop: '1rem' }}>
+            <div className="section-header">
+              <Activity size={18} />
+              <h2 className="section-title">סיכום פעילות בתי ספר</h2>
+            </div>
+            <div className="section-body">
+              {activityLoading ? (
+                <p className="section-empty">טוען פעילות...</p>
+              ) : activityFeed.length === 0 ? (
+                <p className="section-empty">אין פעילות אחרונה</p>
+              ) : (
+                <div className="activity-feed">
+                  {activityFeed.map((item, idx) => (
+                    <div key={idx} className="activity-item">
+                      <div className={`activity-icon activity-icon--${item.icon}`}>
+                        {item.icon === 'school' && <School size={14} />}
+                        {item.icon === 'principal' && <Shield size={14} />}
+                        {item.icon === 'staff' && <UserPlus size={14} />}
+                      </div>
+                      <div className="activity-content">
+                        <span className="activity-text">{item.text}</span>
+                        {item.detail && <span className="activity-detail">{item.detail}</span>}
+                      </div>
+                      <span className="activity-time">{formatActivityDate(item.date)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
