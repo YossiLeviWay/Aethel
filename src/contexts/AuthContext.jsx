@@ -4,7 +4,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  updatePassword
 } from 'firebase/auth';
 import {
   doc,
@@ -54,7 +55,19 @@ export function AuthProvider({ children }) {
   }
 
   async function login(email, password) {
-    return signInWithEmailAndPassword(auth, email, password);
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    // Check if admin set a new password for this user
+    try {
+      const userDoc = await getDoc(doc(db, 'users', cred.user.uid));
+      const data = userDoc.data();
+      if (data?._pendingPassword) {
+        await updatePassword(cred.user, data._pendingPassword);
+        await updateDoc(doc(db, 'users', cred.user.uid), { _pendingPassword: '' });
+      }
+    } catch (err) {
+      console.warn('Could not apply pending password:', err);
+    }
+    return cred;
   }
 
   async function loginAsAdmin(password) {

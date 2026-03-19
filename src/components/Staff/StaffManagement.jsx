@@ -13,10 +13,10 @@ import {
   arrayUnion,
   getDoc
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebase';
 import Header from '../Layout/Header';
-import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Mail, Filter } from 'lucide-react';
+import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Staff.css';
 
@@ -178,9 +178,9 @@ export default function StaffManagement() {
 
   // Edit modal
   const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ role: '', jobTitle: '', assignedSchoolId: '' });
+  const [editForm, setEditForm] = useState({ role: '', jobTitle: '', assignedSchoolId: '', newPassword: '' });
   const [editError, setEditError] = useState('');
-  const [passwordResetSent, setPasswordResetSent] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
 
   const [schools, setSchools] = useState([]);
   const [permissionsUser, setPermissionsUser] = useState(null);
@@ -268,6 +268,13 @@ export default function StaffManagement() {
   async function handleSaveEdit() {
     if (!editUser) return;
     setEditError('');
+
+    // Validate password if provided
+    if (editForm.newPassword && editForm.newPassword.length < 6) {
+      setEditError('הסיסמא חייבת להכיל לפחות 6 תווים');
+      return;
+    }
+
     const updateData = {
       role: editForm.role,
       jobTitle: editForm.jobTitle
@@ -275,22 +282,19 @@ export default function StaffManagement() {
     if (editForm.assignedSchoolId) {
       updateData.schoolIds = arrayUnion(editForm.assignedSchoolId);
     }
+    // Store pending password if admin set one
+    if (editForm.newPassword) {
+      updateData._pendingPassword = editForm.newPassword;
+    }
     try {
       await updateDoc(doc(db, 'users', editUser.id), updateData);
+      if (editForm.newPassword) {
+        setPasswordSaved(true);
+      }
       setEditUser(null);
       isAdmin ? loadAllStaff() : loadStaff();
     } catch (err) {
       setEditError('שגיאה בשמירה: ' + err.message);
-    }
-  }
-
-  async function handleSendPasswordReset() {
-    if (!editUser?.email) return;
-    try {
-      await sendPasswordResetEmail(auth, editUser.email);
-      setPasswordResetSent(true);
-    } catch (err) {
-      setEditError('שגיאה בשליחת מייל איפוס: ' + err.message);
     }
   }
 
@@ -302,9 +306,9 @@ export default function StaffManagement() {
 
   function openEdit(user) {
     setEditUser(user);
-    setEditForm({ role: user.role, jobTitle: user.jobTitle || '', assignedSchoolId: '' });
+    setEditForm({ role: user.role, jobTitle: user.jobTitle || '', assignedSchoolId: '', newPassword: '' });
     setEditError('');
-    setPasswordResetSent(false);
+    setPasswordSaved(false);
   }
 
   async function openPermissions(user) {
@@ -700,33 +704,23 @@ export default function StaffManagement() {
                     </div>
                   )}
 
-                  {/* Password Reset Section */}
+                  {/* Password Change Section */}
                   <div className="form-group">
                     <label>
                       <Lock size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
-                      סיסמא
+                      קביעת סיסמא חדשה
                     </label>
-                    <div className="password-reset-row">
-                      <p className="password-reset-hint">
-                        לאיפוס הסיסמא, שלח מייל איפוס למשתמש.
-                      </p>
-                      {passwordResetSent ? (
-                        <span className="password-reset-success">
-                          <CheckCircle size={14} />
-                          מייל נשלח ל-{editUser.email}
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={handleSendPasswordReset}
-                          style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                        >
-                          <Mail size={14} />
-                          שלח מייל איפוס סיסמא
-                        </button>
-                      )}
-                    </div>
+                    <input
+                      type="password"
+                      value={editForm.newPassword}
+                      onChange={e => setEditForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                      placeholder="סיסמא חדשה (לפחות 6 תווים)"
+                      dir="ltr"
+                      minLength={6}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                      הסיסמא תיכנס לתוקף בכניסה הבאה של המשתמש למערכת. השאירו ריק אם אין צורך בשינוי.
+                    </span>
                   </div>
 
                   {editError && (

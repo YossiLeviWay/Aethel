@@ -12,7 +12,7 @@ import {
   orderBy
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type } from 'lucide-react';
+import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type, Scissors, Copy, Clipboard, ClipboardPaste, RotateCcw, ArrowDownToLine, ArrowRightToLine, Eraser } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './DataMapper.css';
 
@@ -142,6 +142,9 @@ export default function ExcelWriter() {
   const [showFnPicker, setShowFnPicker] = useState(false);
   const [rangeSelecting, setRangeSelecting] = useState(false);
   const [formulaPrefix, setFormulaPrefix] = useState('');
+  const [clipboard, setClipboard] = useState(null); // { mode: 'copy'|'cut', ri, ci, value }
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, ri, ci }
+  const [undoStack, setUndoStack] = useState([]);
   const tableRef = useRef(null);
 
   const schoolId = selectedSchool || userData?.schoolId;
@@ -437,6 +440,193 @@ export default function ExcelWriter() {
     }
   }
 
+  // Push current state to undo stack
+  function pushUndo() {
+    setUndoStack(prev => [...prev.slice(-20), JSON.stringify(sheetData.rows)]);
+  }
+
+  function handleUndo() {
+    if (undoStack.length === 0) return;
+    const prev = undoStack[undoStack.length - 1];
+    setUndoStack(s => s.slice(0, -1));
+    try {
+      const rows = JSON.parse(prev);
+      setSheetData(sd => ({ ...sd, rows }));
+    } catch {}
+  }
+
+  // Keyboard navigation for cells
+  function handleCellKeyDown(ri, ci, e) {
+    const maxRow = sheetData.rows.length - 1;
+    const maxCol = sheetData.columns.length - 1;
+
+    // Arrow keys move between cells (only when not actively typing / input not focused with content)
+    if (e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey)) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        e.preventDefault();
+        const nextRi = Math.min(ri + 1, maxRow);
+        setEditingCell({ ri: nextRi, ci });
+        setFormulaBar(sheetData.rows[nextRi]?.[ci] || '');
+        setSelection({ startRow: nextRi, startCol: ci, endRow: nextRi, endCol: ci });
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const nextRi = Math.max(ri - 1, 0);
+      setEditingCell({ ri: nextRi, ci });
+      setFormulaBar(sheetData.rows[nextRi]?.[ci] || '');
+      setSelection({ startRow: nextRi, startCol: ci, endRow: nextRi, endCol: ci });
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      const nextCi = Math.max(ci - 1, 0); // RTL: right = previous column
+      setEditingCell({ ri, ci: nextCi });
+      setFormulaBar(sheetData.rows[ri]?.[nextCi] || '');
+      setSelection({ startRow: ri, startCol: nextCi, endRow: ri, endCol: nextCi });
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const nextCi = Math.min(ci + 1, maxCol); // RTL: left = next column
+      setEditingCell({ ri, ci: nextCi });
+      setFormulaBar(sheetData.rows[ri]?.[nextCi] || '');
+      setSelection({ startRow: ri, startCol: nextCi, endRow: ri, endCol: nextCi });
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const nextCi = e.shiftKey ? Math.max(ci - 1, 0) : Math.min(ci + 1, maxCol);
+      setEditingCell({ ri, ci: nextCi });
+      setFormulaBar(sheetData.rows[ri]?.[nextCi] || '');
+      setSelection({ startRow: ri, startCol: nextCi, endRow: ri, endCol: nextCi });
+    } else if (e.key === 'Escape') {
+      setEditingCell(null);
+      setSelection(null);
+      setContextMenu(null);
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (!e.target.value && editingCell) {
+        pushUndo();
+        updateCell(ri, ci, '');
+        setFormulaBar('');
+      }
+    } else if (e.ctrlKey || e.metaKey) {
+      if (e.key === 'c') {
+        // Copy
+        setClipboard({ mode: 'copy', ri, ci, value: sheetData.rows[ri]?.[ci] || '' });
+      } else if (e.key === 'x') {
+        // Cut
+        pushUndo();
+        setClipboard({ mode: 'cut', ri, ci, value: sheetData.rows[ri]?.[ci] || '' });
+        updateCell(ri, ci, '');
+        setFormulaBar('');
+      } else if (e.key === 'v' && clipboard) {
+        e.preventDefault();
+        pushUndo();
+        updateCell(ri, ci, clipboard.value);
+        setFormulaBar(clipboard.value);
+        if (clipboard.mode === 'cut') setClipboard(null);
+      } else if (e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+      }
+    }
+  }
+
+  // Right-click context menu
+  function handleContextMenu(ri, ci, e) {
+    e.preventDefault();
+    setEditingCell({ ri, ci });
+    setFormulaBar(sheetData.rows[ri]?.[ci] || '');
+    setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
+    setContextMenu({ x: e.clientX, y: e.clientY, ri, ci });
+  }
+
+  function closeContextMenu() {
+    setContextMenu(null);
+  }
+
+  function ctxCopy() {
+    if (!contextMenu) return;
+    setClipboard({ mode: 'copy', ri: contextMenu.ri, ci: contextMenu.ci, value: sheetData.rows[contextMenu.ri]?.[contextMenu.ci] || '' });
+    closeContextMenu();
+  }
+
+  function ctxCut() {
+    if (!contextMenu) return;
+    pushUndo();
+    setClipboard({ mode: 'cut', ri: contextMenu.ri, ci: contextMenu.ci, value: sheetData.rows[contextMenu.ri]?.[contextMenu.ci] || '' });
+    updateCell(contextMenu.ri, contextMenu.ci, '');
+    if (editingCell?.ri === contextMenu.ri && editingCell?.ci === contextMenu.ci) setFormulaBar('');
+    closeContextMenu();
+  }
+
+  function ctxPaste() {
+    if (!contextMenu || !clipboard) return;
+    pushUndo();
+    updateCell(contextMenu.ri, contextMenu.ci, clipboard.value);
+    if (editingCell?.ri === contextMenu.ri && editingCell?.ci === contextMenu.ci) setFormulaBar(clipboard.value);
+    if (clipboard.mode === 'cut') setClipboard(null);
+    closeContextMenu();
+  }
+
+  function ctxDelete() {
+    if (!contextMenu) return;
+    pushUndo();
+    updateCell(contextMenu.ri, contextMenu.ci, '');
+    if (editingCell?.ri === contextMenu.ri && editingCell?.ci === contextMenu.ci) setFormulaBar('');
+    closeContextMenu();
+  }
+
+  function ctxClearRow() {
+    if (!contextMenu) return;
+    pushUndo();
+    setSheetData(prev => {
+      const rows = prev.rows.map(r => [...r]);
+      rows[contextMenu.ri] = new Array(prev.columns.length).fill('');
+      return { ...prev, rows };
+    });
+    closeContextMenu();
+  }
+
+  function ctxDeleteRow() {
+    if (!contextMenu || sheetData.rows.length <= 1) return;
+    pushUndo();
+    removeRow(contextMenu.ri);
+    closeContextMenu();
+  }
+
+  function ctxDeleteCol() {
+    if (!contextMenu || sheetData.columns.length <= 1) return;
+    pushUndo();
+    removeColumn(contextMenu.ci);
+    closeContextMenu();
+  }
+
+  function ctxInsertRowBelow() {
+    if (!contextMenu) return;
+    pushUndo();
+    setSheetData(prev => {
+      const newRow = new Array(prev.columns.length).fill('');
+      const rows = [...prev.rows];
+      rows.splice(contextMenu.ri + 1, 0, newRow);
+      return { ...prev, rows };
+    });
+    closeContextMenu();
+  }
+
+  function ctxInsertColRight() {
+    if (!contextMenu) return;
+    pushUndo();
+    setSheetData(prev => ({
+      columns: [...prev.columns.slice(0, contextMenu.ci + 1), `עמודה ${prev.columns.length + 1}`, ...prev.columns.slice(contextMenu.ci + 1)],
+      rows: prev.rows.map(r => [...r.slice(0, contextMenu.ci + 1), '', ...r.slice(contextMenu.ci + 1)])
+    }));
+    closeContextMenu();
+  }
+
+  // Close context menu on click anywhere
+  useEffect(() => {
+    function handleClick() { setContextMenu(null); }
+    if (contextMenu) {
+      window.addEventListener('click', handleClick);
+      return () => window.removeEventListener('click', handleClick);
+    }
+  }, [contextMenu]);
+
   function insertCalcRow(calcId) {
     if (!editingCell) return;
     const fnName = calcId.toUpperCase();
@@ -633,10 +823,11 @@ export default function ExcelWriter() {
                             return (
                               <td
                                 key={ci}
-                                className={`excel-cell ${inSel ? 'excel-cell--selected' : ''} ${isFocused ? 'excel-cell--focused' : ''} ${isFormula && !isFocused ? 'excel-cell--formula' : ''}`}
+                                className={`excel-cell ${inSel ? 'excel-cell--selected' : ''} ${isFocused ? 'excel-cell--focused' : ''} ${isFormula && !isFocused ? 'excel-cell--formula' : ''} ${clipboard?.mode === 'cut' && clipboard.ri === ri && clipboard.ci === ci ? 'excel-cell--cut' : ''}`}
                                 style={{ width: columnWidths[ci] || 120, height: rowHeights[ri] || 32 }}
                                 onMouseDown={e => handleCellMouseDown(ri, ci, e)}
                                 onMouseEnter={() => handleCellMouseEnter(ri, ci)}
+                                onContextMenu={e => handleContextMenu(ri, ci, e)}
                               >
                                 <input
                                   value={isFocused ? cell : (displayVal || '')}
@@ -652,8 +843,10 @@ export default function ExcelWriter() {
                                       }
                                     }
                                   }}
+                                  onKeyDown={e => handleCellKeyDown(ri, ci, e)}
                                   className="excel-cell-input"
                                   tabIndex={-1}
+                                  autoFocus={isFocused}
                                 />
                               </td>
                             );
@@ -694,6 +887,38 @@ export default function ExcelWriter() {
             )}
           </div>
         </div>
+
+        {/* Right-click context menu */}
+        {contextMenu && (
+          <div
+            className="cell-context-menu"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button className="ctx-item" onClick={ctxCopy}><Copy size={13} /> העתקה</button>
+            <button className="ctx-item" onClick={ctxCut}><Scissors size={13} /> חיתוך</button>
+            <button className="ctx-item" onClick={ctxPaste} disabled={!clipboard}>
+              <ClipboardPaste size={13} /> הדבקה
+            </button>
+            <div className="ctx-divider" />
+            <button className="ctx-item" onClick={ctxDelete}><Trash2 size={13} /> מחיקת תוכן</button>
+            <button className="ctx-item" onClick={ctxClearRow}><Eraser size={13} /> ניקוי שורה</button>
+            <div className="ctx-divider" />
+            <button className="ctx-item" onClick={ctxInsertRowBelow}><ArrowDownToLine size={13} /> הוספת שורה מתחת</button>
+            <button className="ctx-item" onClick={ctxInsertColRight}><ArrowRightToLine size={13} /> הוספת עמודה</button>
+            <div className="ctx-divider" />
+            <button className="ctx-item ctx-item--danger" onClick={ctxDeleteRow} disabled={sheetData.rows.length <= 1}>
+              <Trash2 size={13} /> מחיקת שורה
+            </button>
+            <button className="ctx-item ctx-item--danger" onClick={ctxDeleteCol} disabled={sheetData.columns.length <= 1}>
+              <Trash2 size={13} /> מחיקת עמודה
+            </button>
+            <div className="ctx-divider" />
+            <button className="ctx-item" onClick={handleUndo} disabled={undoStack.length === 0}>
+              <RotateCcw size={13} /> ביטול (Ctrl+Z)
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

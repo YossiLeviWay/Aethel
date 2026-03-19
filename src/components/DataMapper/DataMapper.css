@@ -467,6 +467,64 @@
   color: #1e293b;
 }
 
+/* Cut cell */
+.excel-cell--cut {
+  opacity: 0.45;
+  border: 2px dashed #94a3b8 !important;
+}
+
+/* ===== Context Menu ===== */
+.cell-context-menu {
+  position: fixed;
+  z-index: 200;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 0.3rem;
+  min-width: 180px;
+}
+
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.7rem;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-family: 'Inter', sans-serif;
+  color: #334155;
+  cursor: pointer;
+  text-align: right;
+  transition: background 0.12s;
+}
+
+.ctx-item:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.ctx-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ctx-item--danger {
+  color: #ef4444;
+}
+
+.ctx-item--danger:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
+.ctx-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 0.2rem 0;
+}
+
 @media (max-width: 768px) {
   .excel-layout {
     flex-direction: column;
