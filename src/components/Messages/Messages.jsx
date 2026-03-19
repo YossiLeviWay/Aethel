@@ -18,7 +18,7 @@ import { Send, Search, Mail, Circle, Trash2, X } from 'lucide-react';
 import './Messages.css';
 
 export default function Messages() {
-  const { userData, currentUser } = useAuth();
+  const { userData, currentUser, selectedSchool, isGlobalAdmin } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [activeConv, setActiveConv] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -31,18 +31,43 @@ export default function Messages() {
   const [confirmDeleteMsg, setConfirmDeleteMsg] = useState(null);
   const messagesEndRef = useRef(null);
   const uid = currentUser?.uid;
+  const schoolId = selectedSchool || userData?.schoolId;
 
-  // Load all users for new conversation
+  // Load users from the same school only (admin sees all)
   useEffect(() => {
     if (!uid) return;
     async function loadUsers() {
-      const snap = await getDocs(collection(db, 'users'));
-      setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.id !== uid));
+      let allUsers;
+      if (isGlobalAdmin()) {
+        // Admin can message anyone
+        const snap = await getDocs(collection(db, 'users'));
+        allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.id !== uid);
+      } else if (schoolId) {
+        // Regular user: only load users from the same school
+        const q1 = query(collection(db, 'users'), where('schoolIds', 'array-contains', schoolId));
+        const snap1 = await getDocs(q1);
+        const userMap = new Map();
+        snap1.docs.forEach(d => {
+          if (d.id !== uid) userMap.set(d.id, { id: d.id, ...d.data() });
+        });
+        // Fallback: old schoolId field
+        const q2 = query(collection(db, 'users'), where('schoolId', '==', schoolId));
+        const snap2 = await getDocs(q2);
+        snap2.docs.forEach(d => {
+          if (d.id !== uid && !userMap.has(d.id)) {
+            userMap.set(d.id, { id: d.id, ...d.data() });
+          }
+        });
+        allUsers = Array.from(userMap.values());
+      } else {
+        allUsers = [];
+      }
+      setUsers(allUsers);
     }
     loadUsers();
-  }, [uid]);
+  }, [uid, schoolId]);
 
-  // Listen to conversations
+  // Listen to conversations (scoped by school for non-admin)
   useEffect(() => {
     if (!uid) return;
     const q = query(
@@ -50,7 +75,11 @@ export default function Messages() {
       where('participants', 'array-contains', uid)
     );
     const unsub = onSnapshot(q, (snap) => {
-      const convs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      let convs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Non-admin: filter to only conversations from the current school
+      if (!isGlobalAdmin() && schoolId) {
+        convs = convs.filter(c => !c.schoolId || c.schoolId === schoolId);
+      }
       convs.sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''));
 
       // Merge duplicate conversations for the same participant pair
@@ -119,14 +148,16 @@ export default function Messages() {
       setShowNewConv(false);
       return;
     }
-    const convDoc = await addDoc(collection(db, 'conversations'), {
+    const convData = {
       participants: [uid, otherUser.id],
       participantNames: { [uid]: userData?.fullName || '', [otherUser.id]: otherUser.fullName || '' },
       lastMessage: '',
       lastMessageAt: new Date().toISOString(),
-      unreadBy: []
-    });
-    const newConv = { id: convDoc.id, participants: [uid, otherUser.id], participantNames: { [uid]: userData?.fullName || '', [otherUser.id]: otherUser.fullName || '' }, lastMessage: '', lastMessageAt: new Date().toISOString(), unreadBy: [] };
+      unreadBy: [],
+      schoolId: schoolId || ''
+    };
+    const convDoc = await addDoc(collection(db, 'conversations'), convData);
+    const newConv = { id: convDoc.id, ...convData };
     setActiveConv(newConv);
     setShowNewConv(false);
   }

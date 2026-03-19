@@ -39,11 +39,11 @@ export default function HolidayManager() {
 
   const schoolId = selectedSchool || userData?.schoolId;
   const admin = isGlobalAdmin();
-  const collectionName = admin ? 'holidays_global' : `holidays_${schoolId}`;
+  // Admin edits the selected school's holidays, not global. Global is only for broadcasting.
+  const collectionName = schoolId ? `holidays_${schoolId}` : (admin ? 'holidays_global' : null);
 
   useEffect(() => {
     if (!collectionName) return;
-    if (!admin && !schoolId) return;
 
     const q = query(collection(db, collectionName), orderBy('startDate', 'asc'));
     const unsub = onSnapshot(q, (snap) => {
@@ -125,15 +125,19 @@ export default function HolidayManager() {
 
   async function handleBroadcast() {
     if (!admin) return;
-    if (!confirm('פעולה זו תעתיק את כל החגים לכלל המוסדות. להמשיך?')) return;
+    if (!confirm('פעולה זו תעתיק את החגים מהמוסד הנוכחי לכלל המוסדות. להמשיך?')) return;
 
     setBroadcasting(true);
     try {
       const schoolsSnap = await getDocs(collection(db, 'schools'));
-      const globalSnap = await getDocs(collection(db, 'holidays_global'));
-      const globalHolidays = globalSnap.docs.map(d => d.data());
+      // Broadcast the current holidays (from the selected school or current view)
+      const sourceHolidays = holidays.map(h => {
+        const { id, ...data } = h;
+        return data;
+      });
 
       for (const schoolDoc of schoolsSnap.docs) {
+        if (schoolDoc.id === schoolId) continue; // Skip the source school
         const targetCollection = `holidays_${schoolDoc.id}`;
         const batch = writeBatch(db);
 
@@ -142,7 +146,7 @@ export default function HolidayManager() {
           batch.delete(doc(db, targetCollection, d.id));
         });
 
-        globalHolidays.forEach(holiday => {
+        sourceHolidays.forEach(holiday => {
           const newRef = doc(collection(db, targetCollection));
           batch.set(newRef, {
             ...holiday,
