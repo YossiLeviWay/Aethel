@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
@@ -63,7 +63,7 @@ function PublicRoute({ children }) {
 
 export default function App() {
   return (
-    <BrowserRouter basename="/Aethel">
+    <HashRouter>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
@@ -85,6 +85,6 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </AuthProvider>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
