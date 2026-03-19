@@ -1,0 +1,266 @@
+.staff-count {
+  font-size: 0.82rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.view-toggle {
+  display: flex;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.toggle-btn {
+  padding: 0.4rem 0.85rem;
+  border: none;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.15s;
+}
+
+.toggle-btn.active {
+  background: #2563eb;
+  color: #fff;
+}
+
+.toggle-btn + .toggle-btn {
+  border-right: 1px solid #e2e8f0;
+}
+
+/* Staff Grid */
+.staff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.staff-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.25rem;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.staff-card:hover {
+  border-color: #bfdbfe;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.staff-card-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin: 0 auto 0.75rem;
+}
+
+.staff-card-name {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.staff-card-title {
+  margin: 0.2rem 0 0.5rem;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.staff-card-email {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  margin: 0.5rem 0 0;
+  direction: ltr;
+}
+
+.staff-card-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* Role badges */
+.role-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.role-global_admin {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.role-principal {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.role-editor {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.role-viewer {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* Inline edit */
+.inline-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.inline-edit select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-family: 'Inter', sans-serif;
+}
+
+.btn-sm {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+/* Table helpers */
+.td-user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.td-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
+/* ===== Add Staff Modal ===== */
+.add-staff-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.add-staff-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.add-staff-form .form-group label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.add-staff-form .form-group input,
+.add-staff-form .form-group select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-family: 'Inter', sans-serif;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+.add-staff-form .form-group input:focus,
+.add-staff-form .form-group select:focus {
+  outline: none;
+  border-color: #2563eb;
+  background: #fff;
+}
+
+/* ===== Search bar ===== */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  min-width: 180px;
+}
+
+.search-bar input {
+  border: none;
+  background: transparent;
+  font-size: 0.82rem;
+  font-family: 'Inter', sans-serif;
+  color: #1e293b;
+  width: 100%;
+  outline: none;
+}
+
+.search-bar svg {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .staff-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .staff-card {
+    padding: 1rem;
+  }
+
+  .view-toggle {
+    order: -1;
+  }
+
+  .inline-edit {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .staff-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .staff-card-avatar {
+    width: 40px;
+    height: 40px;
+    font-size: 0.9rem;
+  }
+
+  .staff-card-name {
+    font-size: 0.82rem;
+  }
+}
