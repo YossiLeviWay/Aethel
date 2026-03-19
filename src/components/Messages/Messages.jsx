@@ -14,8 +14,15 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Send, Search, Mail, Circle, Trash2, X } from 'lucide-react';
+import { Send, Search, Mail, Circle, Trash2, X, Shield } from 'lucide-react';
 import './Messages.css';
+
+const ROLE_LABELS_MSG = {
+  global_admin: 'מנהל על',
+  principal: 'מנהל מוסד',
+  editor: 'עורך',
+  viewer: 'צופה'
+};
 
 export default function Messages() {
   const { userData, currentUser, selectedSchool, isGlobalAdmin } = useAuth();
@@ -172,6 +179,7 @@ export default function Messages() {
       text,
       senderId: uid,
       senderName: userData?.fullName || '',
+      senderRole: userData?.role || '',
       createdAt: new Date().toISOString()
     });
     await updateDoc(doc(db, 'conversations', activeConv.id), {
@@ -210,6 +218,11 @@ export default function Messages() {
     if (!conv.participantNames) return 'משתמש';
     const otherId = conv.participants.find(id => id !== uid);
     return conv.participantNames[otherId] || 'משתמש';
+  }
+
+  function getOtherUser(conv) {
+    const otherId = conv.participants.find(id => id !== uid);
+    return users.find(u => u.id === otherId);
   }
 
   function getInitial(conv) {
@@ -302,7 +315,12 @@ export default function Messages() {
                   >
                     <div className="conv-avatar">{getInitial(conv)}</div>
                     <div className="conv-info">
-                      <span className="conv-name">{getOtherName(conv)}</span>
+                      <div className="conv-name-row">
+                        <span className="conv-name">{getOtherName(conv)}</span>
+                        {(() => { const other = getOtherUser(conv); return other?.role ? (
+                          <span className={`conv-role-tag conv-role--${other.role}`}>{ROLE_LABELS_MSG[other.role]}</span>
+                        ) : null; })()}
+                      </div>
                       <span className="conv-last-msg">{conv.lastMessage || 'שיחה חדשה'}</span>
                     </div>
                     {isUnread && <Circle size={8} fill="#2563eb" className="conv-unread-dot" />}
@@ -321,7 +339,12 @@ export default function Messages() {
               <>
                 <div className="msg-header">
                   <div className="msg-header-avatar">{getInitial(activeConv)}</div>
-                  <span className="msg-header-name">{getOtherName(activeConv)}</span>
+                  <div className="msg-header-info">
+                    <span className="msg-header-name">{getOtherName(activeConv)}</span>
+                    {(() => { const other = getOtherUser(activeConv); return other?.role ? (
+                      <span className={`msg-header-role msg-role--${other.role}`}>{ROLE_LABELS_MSG[other.role]}</span>
+                    ) : null; })()}
+                  </div>
                 </div>
                 <div className="msg-list">
                   {messages.length === 0 && <p className="msg-empty">אין הודעות עדיין. שלחו את ההודעה הראשונה!</p>}
@@ -336,6 +359,11 @@ export default function Messages() {
                       >
                         <div className="msg-bubble-header">
                           <span className="msg-sender">{isMe ? 'אני' : msg.senderName}</span>
+                          {msg.senderRole && (
+                            <span className={`msg-role-badge msg-role--${msg.senderRole}`}>
+                              {ROLE_LABELS_MSG[msg.senderRole] || ''}
+                            </span>
+                          )}
                           <span className="msg-time">
                             {formatMsgDate(msg.createdAt)}
                           </span>

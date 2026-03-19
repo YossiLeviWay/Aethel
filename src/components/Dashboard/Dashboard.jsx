@@ -86,6 +86,7 @@ export default function Dashboard() {
   const [schools, setSchools] = useState([]);
   const [activityFeed, setActivityFeed] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [schoolStats, setSchoolStats] = useState([]);
 
   useEffect(() => {
     if (!selectedSchool) return;
@@ -225,15 +226,23 @@ export default function Dashboard() {
           }
         }
 
-        // 3. Count staff per school for summary stats
-        const schoolStaffCounts = {};
+        // 3. Per-school summary stats
+        const statsArr = [];
         for (const school of allSchools) {
-          const count = allUsers.filter(u => {
+          const staffList = allUsers.filter(u => {
             const sids = u.schoolIds || [];
             return sids.includes(school.id) || u.schoolId === school.id;
-          }).length;
-          schoolStaffCounts[school.id] = count;
+          });
+          const principalCount = staffList.filter(u => u.role === 'principal').length;
+          statsArr.push({
+            id: school.id,
+            name: school.name || school.id,
+            staffCount: staffList.length,
+            principalCount,
+            createdAt: school.createdAt || '',
+          });
         }
+        setSchoolStats(statsArr);
 
         // Sort by date descending, take latest 20
         feed.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -632,6 +641,35 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Admin School Summary Stats */}
+        {isGlobalAdmin() && schoolStats.length > 0 && (
+          <div className="dashboard-section" style={{ marginTop: '1rem' }}>
+            <div className="section-header">
+              <School size={18} />
+              <h2 className="section-title">סיכום מוסדות ({schoolStats.length})</h2>
+            </div>
+            <div className="section-body">
+              <div className="school-stats-grid">
+                {schoolStats.map(s => (
+                  <div key={s.id} className="school-stat-card">
+                    <div className="school-stat-name">{s.name}</div>
+                    <div className="school-stat-row">
+                      <div className="school-stat-item">
+                        <Users size={14} />
+                        <span>{s.staffCount} אנשי צוות</span>
+                      </div>
+                      <div className="school-stat-item">
+                        <Shield size={14} />
+                        <span>{s.principalCount} מנהלים</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Admin Activity Feed */}
         {isGlobalAdmin() && (

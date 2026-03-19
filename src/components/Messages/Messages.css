@@ -377,6 +377,87 @@
   background: #e2e8f0;
 }
 
+/* ===== Role Badges in Messages ===== */
+.msg-role-badge {
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.58rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.msg-role--global_admin {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.msg-role--principal {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.msg-role--editor {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.msg-role--viewer {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* Conversation list role tag */
+.conv-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.conv-role-tag {
+  display: inline-block;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  font-size: 0.55rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.conv-role--global_admin {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.conv-role--principal {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.conv-role--editor {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.conv-role--viewer {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* Message header with role */
+.msg-header-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.msg-header-role {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
 @media (max-width: 768px) {
   .messages-layout {
     flex-direction: column;

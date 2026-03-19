@@ -4,7 +4,7 @@ import { db } from '../../firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, writeBatch } from 'firebase/firestore';
 import { ISRAELI_HOLIDAYS } from '../../data/holidays';
 import Header from '../Layout/Header';
-import { Plus, Trash2, Edit3, Save, X, Search, Send, Calendar, Filter, Download } from 'lucide-react';
+import { Plus, Trash2, Edit3, Save, X, Search, Send, Calendar, Filter, Download, CalendarPlus } from 'lucide-react';
 import './Holidays.css';
 
 const HOLIDAY_TYPES = {
@@ -36,6 +36,8 @@ export default function HolidayManager() {
   const [broadcasting, setBroadcasting] = useState(false);
   const [activeReligionFilters, setActiveReligionFilters] = useState(Object.keys(HOLIDAY_TYPES));
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [syncingType, setSyncingType] = useState(null);
 
   const schoolId = selectedSchool || userData?.schoolId;
   const admin = isGlobalAdmin();
@@ -54,6 +56,64 @@ export default function HolidayManager() {
 
     return unsub;
   }, [collectionName, admin, schoolId]);
+
+  // Load calendar events to check which holidays are already synced
+  useEffect(() => {
+    if (!schoolId) return;
+    const unsub = onSnapshot(collection(db, `events_${schoolId}`), (snap) => {
+      setCalendarEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => setCalendarEvents([]));
+    return unsub;
+  }, [schoolId]);
+
+  function isHolidaySynced(holiday) {
+    return calendarEvents.some(e =>
+      e.title === holiday.name && e.date === holiday.startDate && e._holidaySync
+    );
+  }
+
+  async function syncTypeToCalendar(type) {
+    if (!schoolId) return;
+    const typeHolidays = holidays.filter(h => h.type === type);
+    const toSync = typeHolidays.filter(h => !isHolidaySynced(h));
+    if (toSync.length === 0) {
+      alert('כל החגים מסוג זה כבר מוצגים בלוח השנה');
+      return;
+    }
+    if (!confirm(`לשגר ${toSync.length} חגים מסוג "${HOLIDAY_TYPES[type]?.label}" ללוח השנה?`)) return;
+
+    setSyncingType(type);
+    try {
+      for (const h of toSync) {
+        const startDate = new Date(h.startDate + 'T00:00:00');
+        const endDate = new Date((h.endDate || h.startDate) + 'T00:00:00');
+        // Create an event for each day in the holiday range
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+          const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const exists = calendarEvents.some(e => e.title === h.name && e.date === dateStr && e._holidaySync);
+          if (!exists) {
+            await addDoc(collection(db, `events_${schoolId}`), {
+              title: h.name,
+              date: dateStr,
+              category: 'כללי',
+              color: h.color || HOLIDAY_TYPES[type]?.color || '#fef3c7',
+              description: h.note || '',
+              year: d.getFullYear(),
+              month: d.getMonth(),
+              _holidaySync: true,
+              _holidayType: type,
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
+      }
+      alert(`${toSync.length} חגים שוגרו ללוח השנה בהצלחה!`);
+    } catch (err) {
+      alert('שגיאה בשיגור ללוח השנה: ' + err.message);
+    } finally {
+      setSyncingType(null);
+    }
+  }
 
   function handleChange(e) {
     const { name, value, type, checked } = e.target;
@@ -322,9 +382,11 @@ export default function HolidayManager() {
 
         {/* Column-based display by religion */}
         {filtered.length > 0 && (
-          <div className="holidays-columns" style={{ gridTemplateColumns: `repeat(${activeColumnCount}, 1fr)` }}>
+          <div className="holidays-columns-wrap">
+          <div className="holidays-columns" style={{ gridTemplateColumns: `repeat(${activeColumnCount}, minmax(220px, 1fr))` }}>
             {Object.entries(columnData).map(([type, items]) => {
               const typeConfig = HOLIDAY_TYPES[type];
+              const allSynced = items.length > 0 && items.every(h => isHolidaySynced(h));
               return (
                 <div key={type} className="holidays-column">
                   <div
@@ -337,7 +399,20 @@ export default function HolidayManager() {
                     >
                       {typeConfig.label}
                     </span>
-                    <span className="holidays-section-count">{items.length}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span className="holidays-section-count">{items.length}</span>
+                      {canEdit && items.length > 0 && (
+                        <button
+                          className="holidays-sync-btn"
+                          title={allSynced ? 'כל החגים כבר בלוח השנה' : 'שגר ללוח השנה'}
+                          onClick={() => syncTypeToCalendar(type)}
+                          disabled={syncingType === type || allSynced}
+                          style={{ opacity: allSynced ? 0.4 : 1 }}
+                        >
+                          <CalendarPlus size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="holidays-column-list">
                     {items.length === 0 ? (
@@ -395,6 +470,7 @@ export default function HolidayManager() {
                 </div>
               );
             })}
+          </div>
           </div>
         )}
 

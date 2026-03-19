@@ -28,6 +28,21 @@ const ROLE_LABELS = {
   viewer: 'צופה'
 };
 
+const AVATAR_STYLES = [
+  { key: 'default', label: 'כחול קלאסי' },
+  { key: 'sunset', label: 'שקיעה' },
+  { key: 'ocean', label: 'אוקיינוס' },
+  { key: 'forest', label: 'יער' },
+  { key: 'royal', label: 'מלכותי' },
+  { key: 'midnight', label: 'חצות' },
+  { key: 'rose', label: 'ורד' },
+  { key: 'amber', label: 'ענבר' },
+  { key: 'slate', label: 'אפור' },
+  { key: 'emerald', label: 'אמרלד' },
+  { key: 'ruby', label: 'רובי' },
+  { key: 'sapphire', label: 'ספיר' },
+];
+
 const DEFAULT_PERMISSIONS = {
   calendar_view: true,
   calendar_edit: false,
@@ -156,7 +171,7 @@ export default function StaffManagement() {
   const [viewMode, setViewMode] = useState('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '', password: '' });
+  const [addForm, setAddForm] = useState({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '', password: '', avatarStyle: 'default' });
   const [addError, setAddError] = useState('');
   const [schools, setSchools] = useState([]);
   const [permissionsUser, setPermissionsUser] = useState(null);
@@ -310,13 +325,14 @@ export default function StaffManagement() {
         schoolIds: [targetSchoolId],
         pendingSchools: [],
         permissions: getPermissionsForRole(addForm.role),
+        avatarStyle: addForm.avatarStyle || 'default',
         phone: '',
         avatar: '',
         createdAt: new Date().toISOString()
       });
 
       setShowAddModal(false);
-      setAddForm({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '', password: '' });
+      setAddForm({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '', password: '', avatarStyle: 'default' });
       loadStaff();
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
@@ -638,6 +654,22 @@ export default function StaffManagement() {
                       <option value="editor">עורך</option>
                       {isAdmin && <option value="principal">מנהל מוסד</option>}
                     </select>
+                  </div>
+                  <div className="form-group">
+                    <label>סגנון אוואטר</label>
+                    <div className="avatar-style-picker">
+                      {AVATAR_STYLES.map(s => (
+                        <button
+                          key={s.key}
+                          type="button"
+                          className={`avatar-style-option avatar-style--${s.key} ${addForm.avatarStyle === s.key ? 'avatar-style-option--active' : ''}`}
+                          onClick={() => setAddForm(prev => ({ ...prev, avatarStyle: s.key }))}
+                          title={s.label}
+                        >
+                          {addForm.fullName?.charAt(0) || '?'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   {addError && (
                     <div style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 500 }}>

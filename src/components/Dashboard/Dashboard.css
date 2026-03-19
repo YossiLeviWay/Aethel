@@ -412,6 +412,52 @@
   flex-shrink: 0;
 }
 
+/* School Summary Stats Grid */
+.school-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.school-stat-card {
+  padding: 0.85rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fafbfc;
+  transition: all 0.15s;
+}
+
+.school-stat-card:hover {
+  border-color: #bfdbfe;
+  background: #f8fafc;
+}
+
+.school-stat-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.school-stat-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.school-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.school-stat-item svg {
+  color: #94a3b8;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .dashboard-stats {

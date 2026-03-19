@@ -434,18 +434,37 @@ export default function GanttChart() {
               const weekEnd = week[6].getDate();
               const label = `${weekStart}-${weekEnd}`;
 
-              return displayCategories.map((cat, ci) => {
+              return [
+                // Date header row for this week
+                <tr key={`dates-${wi}`} className="gantt-week-dates-row">
+                  <td className="gantt-category-cell gantt-week-label" rowSpan={displayCategories.length + 1}>
+                    <div className="gantt-week-num">שבוע {wi + 1}</div>
+                    <div className="gantt-week-dates">{label}</div>
+                  </td>
+                  {visibleDays.map((di, vi) => {
+                    const date = week[di];
+                    const isCurrentMonth = date.getMonth() === month;
+                    const isToday = dateKey(date) === dateKey(new Date());
+                    return (
+                      <td
+                        key={di}
+                        className={`gantt-date-header-cell ${!isCurrentMonth ? 'gantt-cell--dim' : ''} ${isToday ? 'gantt-cell--today' : ''}`}
+                        style={{ width: `${(visibleColumnWidths[vi] / totalFlex) * 100}%` }}
+                      >
+                        <span className="gantt-date-header-day">{HEBREW_DAYS[di]}</span>
+                        <span className="gantt-date-header-num">{date.getDate()}</span>
+                        <span className="gantt-date-header-full">{date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                      </td>
+                    );
+                  })}
+                </tr>,
+                // Category rows
+                ...displayCategories.map((cat, ci) => {
                 const rowKey = `${wi}-${ci}`;
                 const rowH = rowHeights[rowKey] || 42;
 
                 return (
                   <tr key={rowKey} className={ci === 0 ? 'gantt-week-start' : ''}>
-                    {ci === 0 && (
-                      <td className="gantt-category-cell gantt-week-label" rowSpan={displayCategories.length}>
-                        <div className="gantt-week-num">שבוע {wi + 1}</div>
-                        <div className="gantt-week-dates">{label}</div>
-                      </td>
-                    )}
                     {visibleDays.map((di, vi) => {
                       const date = week[di];
                       const isCurrentMonth = date.getMonth() === month;
@@ -465,12 +484,6 @@ export default function GanttChart() {
                           }}
                           onClick={() => handleCellClick(date, cat)}
                         >
-                          {ci === 0 && (
-                            <div className="gantt-cell-date">
-                              <span className="gantt-cell-daynum">{date.getDate()}</span>
-                              <span className="gantt-cell-fulldate">{date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
-                            </div>
-                          )}
                           {cellHolidays.length > 0 && (
                             <div className="gantt-holiday-tag" title={cellHolidays.map(h => h.name).join(', ')}>
                               {cellHolidays[0].name}
@@ -500,7 +513,8 @@ export default function GanttChart() {
                     })}
                   </tr>
                 );
-              });
+              })
+              ];
             })}
           </tbody>
         </table>

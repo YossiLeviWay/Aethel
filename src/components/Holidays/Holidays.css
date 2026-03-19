@@ -379,10 +379,17 @@
 }
 
 /* ===== Column Layout ===== */
+.holidays-columns-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.5rem;
+}
+
 .holidays-columns {
   display: grid;
   gap: 1rem;
   margin-top: 0.5rem;
+  min-width: max-content;
 }
 
 .holidays-column {
@@ -392,6 +399,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-width: 220px;
 }
 
 .holidays-column-header {
@@ -407,6 +415,30 @@
   display: flex;
   flex-direction: column;
   flex: 1;
+}
+
+.holidays-sync-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(0,0,0,0.15);
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.holidays-sync-btn:hover:not(:disabled) {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #2563eb;
+}
+
+.holidays-sync-btn:disabled {
+  cursor: not-allowed;
 }
 
 .holidays-column-empty {

@@ -310,6 +310,37 @@
   user-select: none;
 }
 
+/* ===== Avatar Style Picker ===== */
+.avatar-style-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.avatar-style-option {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.avatar-style-option:hover {
+  transform: scale(1.1);
+}
+
+.avatar-style-option--active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
   .staff-grid {
