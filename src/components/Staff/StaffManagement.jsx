@@ -14,8 +14,8 @@ import {
   arrayRemove,
   getDoc
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../../firebase';
+import { createUserWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
+import { secondaryAuth } from '../../firebase';
 import Header from '../Layout/Header';
 import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User } from 'lucide-react';
 import '../Gantt/Gantt.css';
@@ -384,7 +384,8 @@ export default function StaffManagement() {
     const targetSchoolId = addForm.schoolId || schoolId;
 
     try {
-      const cred = await createUserWithEmailAndPassword(auth, addForm.email, addForm.password);
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, addForm.email, addForm.password);
+      await firebaseSignOut(secondaryAuth);
       await setDoc(doc(db, 'users', cred.user.uid), {
         uid: cred.user.uid,
         email: addForm.email,
