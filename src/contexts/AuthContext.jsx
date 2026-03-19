@@ -62,7 +62,7 @@ export function AuthProvider({ children }) {
       const data = userDoc.data();
       if (data?._pendingPassword) {
         await updatePassword(cred.user, data._pendingPassword);
-        await updateDoc(doc(db, 'users', cred.user.uid), { _pendingPassword: '' });
+        await updateDoc(doc(db, 'users', cred.user.uid), { _pendingPassword: '', _authPassword: data._pendingPassword });
       }
     } catch (err) {
       console.warn('Could not apply pending password:', err);

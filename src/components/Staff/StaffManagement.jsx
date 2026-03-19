@@ -14,7 +14,7 @@ import {
   arrayRemove,
   getDoc
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, updateEmail, deleteUser, signOut as firebaseSignOut } from 'firebase/auth';
 import { secondaryAuth } from '../../firebase';
 import Header from '../Layout/Header';
 import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User } from 'lucide-react';
@@ -294,9 +294,36 @@ export default function StaffManagement() {
     if (editForm.assignedSchoolId) {
       updateData.schoolIds = arrayUnion(editForm.assignedSchoolId);
     }
-    if (editForm.newPassword) {
-      updateData._pendingPassword = editForm.newPassword;
+
+    // Sync email/password changes directly to Firebase Auth
+    const emailChanged = editForm.email.trim() !== (editUser.email || '');
+    const passwordChanged = !!editForm.newPassword;
+    if (emailChanged || passwordChanged) {
+      const currentPassword = editUser._authPassword || editUser._pendingPassword;
+      if (currentPassword && editUser.email) {
+        try {
+          const cred = await signInWithEmailAndPassword(secondaryAuth, editUser.email, currentPassword);
+          if (passwordChanged) {
+            await updatePassword(cred.user, editForm.newPassword);
+            updateData._authPassword = editForm.newPassword;
+          }
+          if (emailChanged) {
+            await updateEmail(cred.user, editForm.email.trim());
+          }
+          await firebaseSignOut(secondaryAuth);
+        } catch (authErr) {
+          console.warn('Could not update Firebase Auth:', authErr);
+          // Fallback to _pendingPassword for password changes
+          if (passwordChanged) {
+            updateData._pendingPassword = editForm.newPassword;
+          }
+        }
+      } else if (passwordChanged) {
+        // No stored password, fallback to _pendingPassword
+        updateData._pendingPassword = editForm.newPassword;
+      }
     }
+
     try {
       await updateDoc(doc(db, 'users', editUser.id), updateData);
       // Remove schools one by one
@@ -317,7 +344,23 @@ export default function StaffManagement() {
 
   async function handleDelete(userId) {
     if (!confirm('האם להסיר משתמש זה?')) return;
-    await deleteDoc(doc(db, 'users', userId));
+    try {
+      // Try to delete from Firebase Auth using stored password
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      const data = userDoc.data();
+      const password = data?._authPassword || data?._pendingPassword;
+      if (password && data?.email) {
+        try {
+          const cred = await signInWithEmailAndPassword(secondaryAuth, data.email, password);
+          await deleteUser(cred.user);
+        } catch (authErr) {
+          console.warn('Could not delete from Firebase Auth:', authErr);
+        }
+      }
+      await deleteDoc(doc(db, 'users', userId));
+    } catch (err) {
+      console.error('Error deleting user:', err);
+    }
     isAdmin ? loadAllStaff() : loadStaff();
   }
 
@@ -399,7 +442,8 @@ export default function StaffManagement() {
         avatarStyle: addForm.avatarStyle || 'default',
         phone: '',
         avatar: '',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        _authPassword: addForm.password
       });
 
       setShowAddModal(false);
