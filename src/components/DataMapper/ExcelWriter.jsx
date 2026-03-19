@@ -142,9 +142,10 @@ export default function ExcelWriter() {
   const [showFnPicker, setShowFnPicker] = useState(false);
   const [rangeSelecting, setRangeSelecting] = useState(false);
   const [formulaPrefix, setFormulaPrefix] = useState('');
-  const [clipboard, setClipboard] = useState(null); // { mode: 'copy'|'cut', ri, ci, value }
-  const [contextMenu, setContextMenu] = useState(null); // { x, y, ri, ci }
+  const [clipboard, setClipboard] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
   const [undoStack, setUndoStack] = useState([]);
+  const [cellEditMode, setCellEditMode] = useState(false); // false=navigation, true=editing text
   const tableRef = useRef(null);
 
   const schoolId = selectedSchool || userData?.schoolId;
@@ -342,6 +343,7 @@ export default function ExcelWriter() {
     setIsSelecting(true);
     setEditingCell({ ri, ci });
     setFormulaBar(sheetData.rows[ri]?.[ci] || '');
+    setCellEditMode(false);
     setRangeSelecting(false);
     setFormulaPrefix('');
   }
@@ -455,64 +457,29 @@ export default function ExcelWriter() {
     } catch {}
   }
 
+  // Navigate to a cell (navigation mode)
+  function navigateTo(ri, ci) {
+    setEditingCell({ ri, ci });
+    setFormulaBar(sheetData.rows[ri]?.[ci] || '');
+    setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
+    setCellEditMode(false);
+  }
+
   // Keyboard navigation for cells
   function handleCellKeyDown(ri, ci, e) {
     const maxRow = sheetData.rows.length - 1;
     const maxCol = sheetData.columns.length - 1;
 
-    // Arrow keys move between cells (only when not actively typing / input not focused with content)
-    if (e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey)) {
-      if (e.key === 'ArrowDown' || e.key === 'Enter') {
-        e.preventDefault();
-        const nextRi = Math.min(ri + 1, maxRow);
-        setEditingCell({ ri: nextRi, ci });
-        setFormulaBar(sheetData.rows[nextRi]?.[ci] || '');
-        setSelection({ startRow: nextRi, startCol: ci, endRow: nextRi, endCol: ci });
-      }
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      const nextRi = Math.max(ri - 1, 0);
-      setEditingCell({ ri: nextRi, ci });
-      setFormulaBar(sheetData.rows[nextRi]?.[ci] || '');
-      setSelection({ startRow: nextRi, startCol: ci, endRow: nextRi, endCol: ci });
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      const nextCi = Math.max(ci - 1, 0); // RTL: right = previous column
-      setEditingCell({ ri, ci: nextCi });
-      setFormulaBar(sheetData.rows[ri]?.[nextCi] || '');
-      setSelection({ startRow: ri, startCol: nextCi, endRow: ri, endCol: nextCi });
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      const nextCi = Math.min(ci + 1, maxCol); // RTL: left = next column
-      setEditingCell({ ri, ci: nextCi });
-      setFormulaBar(sheetData.rows[ri]?.[nextCi] || '');
-      setSelection({ startRow: ri, startCol: nextCi, endRow: ri, endCol: nextCi });
-    } else if (e.key === 'Tab') {
-      e.preventDefault();
-      const nextCi = e.shiftKey ? Math.max(ci - 1, 0) : Math.min(ci + 1, maxCol);
-      setEditingCell({ ri, ci: nextCi });
-      setFormulaBar(sheetData.rows[ri]?.[nextCi] || '');
-      setSelection({ startRow: ri, startCol: nextCi, endRow: ri, endCol: nextCi });
-    } else if (e.key === 'Escape') {
-      setEditingCell(null);
-      setSelection(null);
-      setContextMenu(null);
-    } else if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (!e.target.value && editingCell) {
-        pushUndo();
-        updateCell(ri, ci, '');
-        setFormulaBar('');
-      }
-    } else if (e.ctrlKey || e.metaKey) {
+    // Ctrl/Cmd shortcuts always work
+    if (e.ctrlKey || e.metaKey) {
       if (e.key === 'c') {
-        // Copy
         setClipboard({ mode: 'copy', ri, ci, value: sheetData.rows[ri]?.[ci] || '' });
       } else if (e.key === 'x') {
-        // Cut
         pushUndo();
         setClipboard({ mode: 'cut', ri, ci, value: sheetData.rows[ri]?.[ci] || '' });
         updateCell(ri, ci, '');
         setFormulaBar('');
+        setCellEditMode(false);
       } else if (e.key === 'v' && clipboard) {
         e.preventDefault();
         pushUndo();
@@ -523,7 +490,78 @@ export default function ExcelWriter() {
         e.preventDefault();
         handleUndo();
       }
+      return;
     }
+
+    // Enter: if in edit mode, confirm and move down. If in nav mode, enter edit mode.
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (cellEditMode) {
+        // Confirm edit, move down
+        navigateTo(Math.min(ri + 1, maxRow), ci);
+      } else {
+        // Enter edit mode
+        setCellEditMode(true);
+      }
+      return;
+    }
+
+    // Escape: exit edit mode or deselect
+    if (e.key === 'Escape') {
+      if (cellEditMode) {
+        setCellEditMode(false);
+      } else {
+        setEditingCell(null);
+        setSelection(null);
+      }
+      setContextMenu(null);
+      return;
+    }
+
+    // Tab always navigates
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const nextCi = e.shiftKey ? Math.max(ci - 1, 0) : Math.min(ci + 1, maxCol);
+      navigateTo(ri, nextCi);
+      return;
+    }
+
+    // Arrow keys: in navigation mode they always move. In edit mode they move cursor within text.
+    if (!cellEditMode) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        navigateTo(Math.min(ri + 1, maxRow), ci);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        navigateTo(Math.max(ri - 1, 0), ci);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        navigateTo(ri, Math.max(ci - 1, 0)); // RTL
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        navigateTo(ri, Math.min(ci + 1, maxCol)); // RTL
+      } else if (e.key === 'Delete') {
+        pushUndo();
+        updateCell(ri, ci, '');
+        setFormulaBar('');
+      } else if (e.key === 'Backspace') {
+        pushUndo();
+        updateCell(ri, ci, '');
+        setFormulaBar('');
+        setCellEditMode(true);
+      } else if (e.key === 'F2') {
+        // F2 enters edit mode (Excel standard)
+        setCellEditMode(true);
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Typing a character in nav mode: clear cell and start editing
+        pushUndo();
+        updateCell(ri, ci, e.key);
+        setFormulaBar(e.key);
+        setCellEditMode(true);
+        e.preventDefault();
+      }
+    }
+    // In edit mode, let the browser handle arrow keys for cursor movement within text
   }
 
   // Right-click context menu
@@ -820,6 +858,7 @@ export default function ExcelWriter() {
                             const isFormula = typeof cell === 'string' && cell.trim().startsWith('=');
                             const displayVal = isFocused ? cell : getCellDisplay(cell);
 
+                            const isEditing = isFocused && cellEditMode;
                             return (
                               <td
                                 key={ci}
@@ -828,10 +867,12 @@ export default function ExcelWriter() {
                                 onMouseDown={e => handleCellMouseDown(ri, ci, e)}
                                 onMouseEnter={() => handleCellMouseEnter(ri, ci)}
                                 onContextMenu={e => handleContextMenu(ri, ci, e)}
+                                onDoubleClick={() => { setEditingCell({ ri, ci }); setCellEditMode(true); }}
                               >
                                 <input
-                                  value={isFocused ? cell : (displayVal || '')}
+                                  value={isEditing ? cell : (isFocused ? (displayVal || '') : (displayVal || ''))}
                                   onChange={e => {
+                                    if (!cellEditMode && isFocused) return; // ignore in nav mode
                                     const val = e.target.value;
                                     updateCell(ri, ci, val);
                                     if (isFocused) {
@@ -844,9 +885,10 @@ export default function ExcelWriter() {
                                     }
                                   }}
                                   onKeyDown={e => handleCellKeyDown(ri, ci, e)}
-                                  className="excel-cell-input"
+                                  className={`excel-cell-input ${isFocused && !cellEditMode ? 'excel-cell-input--nav' : ''}`}
                                   tabIndex={-1}
                                   autoFocus={isFocused}
+                                  readOnly={isFocused && !cellEditMode}
                                 />
                               </td>
                             );

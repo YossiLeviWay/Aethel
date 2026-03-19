@@ -265,6 +265,12 @@
   outline: none;
 }
 
+.excel-cell-input--nav {
+  cursor: default;
+  caret-color: transparent;
+  user-select: none;
+}
+
 /* Row resize handle */
 .excel-row-resize {
   position: absolute;

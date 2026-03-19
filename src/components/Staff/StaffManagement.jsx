@@ -11,12 +11,13 @@ import {
   doc,
   setDoc,
   arrayUnion,
+  arrayRemove,
   getDoc
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebase';
 import Header from '../Layout/Header';
-import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter } from 'lucide-react';
+import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Staff.css';
 
@@ -178,9 +179,10 @@ export default function StaffManagement() {
 
   // Edit modal
   const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ role: '', jobTitle: '', assignedSchoolId: '', newPassword: '' });
+  const [editForm, setEditForm] = useState({ fullName: '', email: '', phone: '', role: '', jobTitle: '', assignedSchoolId: '', newPassword: '' });
   const [editError, setEditError] = useState('');
   const [passwordSaved, setPasswordSaved] = useState(false);
+  const [schoolsToRemove, setSchoolsToRemove] = useState([]);
 
   const [schools, setSchools] = useState([]);
   const [permissionsUser, setPermissionsUser] = useState(null);
@@ -269,25 +271,40 @@ export default function StaffManagement() {
     if (!editUser) return;
     setEditError('');
 
-    // Validate password if provided
+    if (!editForm.fullName.trim()) {
+      setEditError('שם מלא הוא שדה חובה');
+      return;
+    }
+    if (!editForm.email.trim()) {
+      setEditError('דוא"ל הוא שדה חובה');
+      return;
+    }
     if (editForm.newPassword && editForm.newPassword.length < 6) {
       setEditError('הסיסמא חייבת להכיל לפחות 6 תווים');
       return;
     }
 
     const updateData = {
+      fullName: editForm.fullName.trim(),
+      email: editForm.email.trim(),
+      phone: editForm.phone.trim(),
       role: editForm.role,
       jobTitle: editForm.jobTitle
     };
     if (editForm.assignedSchoolId) {
       updateData.schoolIds = arrayUnion(editForm.assignedSchoolId);
     }
-    // Store pending password if admin set one
     if (editForm.newPassword) {
       updateData._pendingPassword = editForm.newPassword;
     }
     try {
       await updateDoc(doc(db, 'users', editUser.id), updateData);
+      // Remove schools one by one
+      for (const sid of schoolsToRemove) {
+        await updateDoc(doc(db, 'users', editUser.id), {
+          schoolIds: arrayRemove(sid)
+        });
+      }
       if (editForm.newPassword) {
         setPasswordSaved(true);
       }
@@ -306,7 +323,16 @@ export default function StaffManagement() {
 
   function openEdit(user) {
     setEditUser(user);
-    setEditForm({ role: user.role, jobTitle: user.jobTitle || '', assignedSchoolId: '', newPassword: '' });
+    setEditForm({
+      fullName: user.fullName || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      role: user.role,
+      jobTitle: user.jobTitle || '',
+      assignedSchoolId: '',
+      newPassword: ''
+    });
+    setSchoolsToRemove([]);
     setEditError('');
     setPasswordSaved(false);
   }
@@ -670,6 +696,44 @@ export default function StaffManagement() {
               <div className="modal-form">
                 <div className="add-staff-form">
                   <div className="form-group">
+                    <label>
+                      <User size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                      שם מלא
+                    </label>
+                    <input
+                      value={editForm.fullName}
+                      onChange={e => setEditForm(prev => ({ ...prev, fullName: e.target.value }))}
+                      placeholder="שם פרטי ומשפחה"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>
+                      <Mail size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                      דוא"ל
+                    </label>
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={e => setEditForm(prev => ({ ...prev, email: e.target.value }))}
+                      placeholder="email@example.com"
+                      dir="ltr"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>
+                      <Phone size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                      טלפון
+                    </label>
+                    <input
+                      value={editForm.phone}
+                      onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                      placeholder="מספר טלפון"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div className="form-group">
                     <label>תפקיד</label>
                     <input
                       value={editForm.jobTitle}
@@ -689,6 +753,42 @@ export default function StaffManagement() {
                       {isAdmin && <option value="global_admin">מנהל על</option>}
                     </select>
                   </div>
+
+                  {/* Current Schools with removal */}
+                  {(() => {
+                    const userSchoolIds = (editUser.schoolIds || (editUser.schoolId ? [editUser.schoolId] : [])).filter(sid => !schoolsToRemove.includes(sid));
+                    return userSchoolIds.length > 0 && (
+                      <div className="form-group">
+                        <label>מסגרות נוכחיות</label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          {userSchoolIds.map(sid => {
+                            const schoolName = schools.find(s => s.id === sid)?.name || sid;
+                            return (
+                              <span key={sid} className="school-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.5rem' }}>
+                                {schoolName}
+                                {(isAdmin || (isPrincipal() && sid === schoolId)) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSchoolsToRemove(prev => [...prev, sid])}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: '#ef4444' }}
+                                    title="הסר מסגרת"
+                                  >
+                                    <XCircle size={13} />
+                                  </button>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {schoolsToRemove.length > 0 && (
+                          <span style={{ fontSize: '0.7rem', color: '#f59e0b' }}>
+                            {schoolsToRemove.length} מסגרות יוסרו בשמירה
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {isAdmin && (
                     <div className="form-group">
                       <label>שיוך למסגרת נוספת</label>

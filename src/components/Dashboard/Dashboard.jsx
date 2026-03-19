@@ -87,6 +87,7 @@ export default function Dashboard() {
   const [activityFeed, setActivityFeed] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [schoolStats, setSchoolStats] = useState([]);
+  const [allSchoolEvents, setAllSchoolEvents] = useState([]);
 
   useEffect(() => {
     if (!selectedSchool) return;
@@ -228,21 +229,57 @@ export default function Dashboard() {
 
         // 3. Per-school summary stats
         const statsArr = [];
+        const today = new Date().toISOString().split('T')[0];
         for (const school of allSchools) {
           const staffList = allUsers.filter(u => {
             const sids = u.schoolIds || [];
             return sids.includes(school.id) || u.schoolId === school.id;
           });
           const principalCount = staffList.filter(u => u.role === 'principal').length;
+          let eventCount = 0;
+          let taskCount = 0;
+          try {
+            const evSnap = await getDocs(query(collection(db, `events_${school.id}`), where('date', '>=', today)));
+            eventCount = evSnap.size;
+          } catch (e) { /* collection may not exist */ }
+          try {
+            const tkSnap = await getDocs(collection(db, `tasks_${school.id}`));
+            taskCount = tkSnap.size;
+          } catch (e) { /* collection may not exist */ }
           statsArr.push({
             id: school.id,
             name: school.name || school.id,
             staffCount: staffList.length,
             principalCount,
+            eventCount,
+            taskCount,
             createdAt: school.createdAt || '',
           });
         }
         setSchoolStats(statsArr);
+
+        // 4. Fetch recent events across all schools
+        const allEvents = [];
+        const today = new Date().toISOString().split('T')[0];
+        for (const school of allSchools) {
+          try {
+            const eventsRef = collection(db, `events_${school.id}`);
+            const eventsQuery = query(eventsRef, where('date', '>=', today), orderBy('date', 'asc'), limit(5));
+            const eventsSnap = await getDocs(eventsQuery);
+            eventsSnap.docs.forEach(d => {
+              allEvents.push({
+                ...d.data(),
+                id: d.id,
+                schoolId: school.id,
+                schoolName: school.name || school.id,
+              });
+            });
+          } catch (e) {
+            // Collection may not exist
+          }
+        }
+        allEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+        setAllSchoolEvents(allEvents.slice(0, 15));
 
         // Sort by date descending, take latest 20
         feed.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -663,6 +700,55 @@ export default function Dashboard() {
                         <Shield size={14} />
                         <span>{s.principalCount} מנהלים</span>
                       </div>
+                      <div className="school-stat-item">
+                        <Calendar size={14} />
+                        <span>{s.eventCount} אירועים</span>
+                      </div>
+                      <div className="school-stat-item">
+                        <CheckSquare size={14} />
+                        <span>{s.taskCount} משימות</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Admin Cross-School Events */}
+        {isGlobalAdmin() && allSchoolEvents.length > 0 && (
+          <div className="dashboard-section" style={{ marginTop: '1rem' }}>
+            <div className="section-header">
+              <Calendar size={18} />
+              <h2 className="section-title">אירועים קרובים בכל המוסדות</h2>
+            </div>
+            <div className="section-body">
+              <div className="event-list">
+                {allSchoolEvents.map((event, idx) => (
+                  <div key={`${event.schoolId}-${event.id}-${idx}`} className="event-card" style={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      const d = new Date(event.date + 'T00:00:00');
+                      navigate(`/calendar?year=${d.getFullYear()}&month=${d.getMonth()}`);
+                    }}
+                  >
+                    <div className="event-date-badge">
+                      <span className="event-day">
+                        {new Date(event.date + 'T00:00:00').getDate()}
+                      </span>
+                      <span className="event-month">
+                        {new Date(event.date + 'T00:00:00').toLocaleDateString('he-IL', { month: 'short' })}
+                      </span>
+                    </div>
+                    <div className="event-details">
+                      <span className="event-title">{event.title}</span>
+                      <span className="event-category" style={{ background: '#eff6ff', color: '#2563eb' }}>
+                        {event.schoolName}
+                      </span>
+                      {event.category && (
+                        <span className="event-category">{event.category}</span>
+                      )}
+                      <span className="event-countdown">{getDaysUntil(event.date)}</span>
                     </div>
                   </div>
                 ))}
