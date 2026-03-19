@@ -310,6 +310,121 @@
   user-select: none;
 }
 
+/* ===== Filter Bar ===== */
+.staff-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  position: relative;
+}
+
+.staff-filter-btn--active {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.staff-filters-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.staff-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.staff-filter-group label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.staff-filter-group select {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  font-family: 'Inter', sans-serif;
+  background: #fff;
+  color: #1e293b;
+}
+
+.staff-filter-group select:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+/* ===== School Tags ===== */
+.td-schools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.school-tag {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 5px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.staff-card-school {
+  font-size: 0.72rem;
+  color: #2563eb;
+  margin: 0.25rem 0 0;
+  font-weight: 500;
+}
+
+/* ===== Password Reset ===== */
+.password-reset-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.password-reset-hint {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.password-reset-success {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: #059669;
+  font-weight: 500;
+}
+
 /* ===== Avatar Style Picker ===== */
 .avatar-style-picker {
   display: flex;
