@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   Home,
@@ -13,7 +13,8 @@ import {
   ChevronRight,
   ChevronLeft,
   School,
-  LayoutGrid
+  LayoutGrid,
+  Menu
 } from 'lucide-react';
 import { AVATAR_OPTIONS } from '../../data/avatars';
 import './Layout.css';
@@ -30,10 +31,27 @@ const NAV_ITEMS = [
   { path: '/settings', icon: Settings, label: 'הגדרות', all: true }
 ];
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+}
+
 export default function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+  const isMobile = useIsMobile();
+  const [collapsed, setCollapsed] = useState(isMobile);
   const { logout, userData, selectedSchool } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Auto-collapse on route change for mobile
+  useEffect(() => {
+    if (isMobile) setCollapsed(true);
+  }, [location.pathname, isMobile]);
 
   const schoolId = selectedSchool || userData?.schoolId;
 
@@ -61,7 +79,39 @@ export default function Sidebar() {
     : null;
 
   return (
-    <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
+    <>
+      {/* Mobile overlay */}
+      {isMobile && !collapsed && (
+        <div className="sidebar-overlay" onClick={() => setCollapsed(true)} />
+      )}
+
+      {/* Mobile hamburger button */}
+      {isMobile && collapsed && (
+        <button
+          className="sidebar-mobile-toggle"
+          onClick={() => setCollapsed(false)}
+          style={{
+            position: 'fixed',
+            top: '0.6rem',
+            right: '0.6rem',
+            zIndex: 101,
+            background: '#fff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+            width: 36,
+            height: 36,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+          }}
+        >
+          <Menu size={20} />
+        </button>
+      )}
+
+      <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
       <div className="sidebar-header">
         {!collapsed && <span className="sidebar-logo">EduFlow</span>}
         <button
@@ -114,5 +164,6 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
+    </>
   );
 }

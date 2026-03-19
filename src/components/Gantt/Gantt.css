@@ -85,6 +85,33 @@
   background: #dbeafe;
 }
 
+/* Search bar */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  min-width: 180px;
+}
+
+.search-bar input {
+  border: none;
+  background: transparent;
+  font-size: 0.82rem;
+  font-family: 'Inter', sans-serif;
+  color: #1e293b;
+  width: 100%;
+  outline: none;
+}
+
+.search-bar svg {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
 /* ===== Table ===== */
 .gantt-table-wrap {
   flex: 1;
@@ -204,12 +231,16 @@
 }
 
 .gantt-cell-cat {
-  font-size: 0.6rem;
-  color: #cbd5e1;
+  font-size: 0.65rem;
+  color: #1e293b;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   margin-bottom: 1px;
+  background: rgba(37, 99, 235, 0.08);
+  padding: 0 3px;
+  border-radius: 2px;
 }
 
 .gantt-cell--holiday {
@@ -221,16 +252,16 @@
 }
 
 .gantt-holiday-tag {
-  font-size: 0.6rem;
-  color: #92400e;
-  background: #fef3c7;
-  padding: 0px 3px;
+  font-size: 0.65rem;
+  color: #78350f;
+  background: #fde68a;
+  padding: 1px 4px;
   border-radius: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   margin-bottom: 1px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .gantt-row-resize-handle {
@@ -570,18 +601,71 @@
   }
 }
 
+@media (max-width: 768px) {
+  .gantt-controls {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .gantt-nav {
+    justify-content: center;
+  }
+
+  .gantt-controls-actions {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .gantt-table-wrap {
+    padding: 0.25rem;
+  }
+
+  .gantt-table {
+    min-width: 600px;
+  }
+
+  .gantt-category-col {
+    width: 70px;
+    min-width: 70px;
+  }
+
+  .gantt-week-num {
+    font-size: 0.6rem;
+  }
+
+  .gantt-week-dates {
+    font-size: 0.55rem;
+  }
+
+  .modal-content {
+    max-width: 95vw;
+    margin: 0.5rem;
+    border-radius: 12px;
+  }
+
+  .modal-header {
+    padding: 1rem;
+  }
+
+  .modal-form {
+    padding: 1rem;
+  }
+}
+
 @media (max-width: 600px) {
   .yearly-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .gantt-controls {
-    flex-direction: column;
-    gap: 0.5rem;
-    align-items: stretch;
+  .gantt-select {
+    font-size: 0.78rem;
+    padding: 0.35rem 1.5rem 0.35rem 0.5rem;
   }
 
-  .gantt-nav {
-    justify-content: center;
+  .gantt-yearly-btn {
+    font-size: 0.75rem;
+    padding: 0.35rem 0.75rem;
   }
 }

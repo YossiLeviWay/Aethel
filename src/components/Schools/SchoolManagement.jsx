@@ -11,7 +11,7 @@ import {
   where
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Plus, Edit3, Trash2, UserCheck, X } from 'lucide-react';
+import { Plus, Edit3, Trash2, UserCheck, X, Search } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Schools.css';
 
@@ -22,6 +22,8 @@ export default function SchoolManagement() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', address: '', phone: '', principalId: '' });
   const [assignModal, setAssignModal] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [assignSearch, setAssignSearch] = useState('');
 
   useEffect(() => {
     loadSchools();
@@ -89,6 +91,7 @@ export default function SchoolManagement() {
     await updateDoc(doc(db, 'users', userId), { role: 'principal', schoolId });
     await updateDoc(doc(db, 'schools', schoolId), { principalId: userId });
     setAssignModal(null);
+    setAssignSearch('');
     loadSchools();
     loadUsers();
   }
@@ -97,6 +100,31 @@ export default function SchoolManagement() {
     const user = users.find(u => u.id === principalId);
     return user?.fullName || '—';
   }
+
+  // Filter schools
+  const filteredSchools = schools.filter(school => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const principalName = getPrincipalName(school.principalId).toLowerCase();
+    return (
+      (school.name || '').toLowerCase().includes(q) ||
+      (school.address || '').toLowerCase().includes(q) ||
+      (school.phone || '').includes(q) ||
+      principalName.includes(q)
+    );
+  });
+
+  // Only show principals (or those who can be assigned as principal) in the assign modal
+  const assignableUsers = users
+    .filter(u => u.role !== 'global_admin')
+    .filter(u => {
+      if (!assignSearch.trim()) return true;
+      const q = assignSearch.toLowerCase();
+      return (
+        (u.fullName || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q)
+      );
+    });
 
   return (
     <div className="page">
@@ -107,6 +135,16 @@ export default function SchoolManagement() {
             <Plus size={16} />
             מוסד חדש
           </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div className="search-bar">
+              <Search size={14} />
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="חיפוש מוסד..."
+              />
+            </div>
+          </div>
         </div>
 
         {showForm && (
@@ -144,15 +182,19 @@ export default function SchoolManagement() {
               </tr>
             </thead>
             <tbody>
-              {schools.map(school => (
+              {filteredSchools.map(school => (
                 <tr key={school.id}>
                   <td className="td-bold">{school.name}</td>
                   <td>{school.address || '—'}</td>
                   <td dir="ltr">{school.phone || '—'}</td>
-                  <td>{getPrincipalName(school.principalId)}</td>
+                  <td>
+                    <span style={{ fontWeight: 600, color: school.principalId ? '#1e293b' : '#94a3b8' }}>
+                      {getPrincipalName(school.principalId)}
+                    </span>
+                  </td>
                   <td>
                     <div className="td-actions">
-                      <button className="icon-btn" title="שיוך מנהל" onClick={() => setAssignModal(school.id)}>
+                      <button className="icon-btn" title="שיוך מנהל" onClick={() => { setAssignModal(school.id); setAssignSearch(''); }}>
                         <UserCheck size={15} />
                       </button>
                       <button className="icon-btn" title="עריכה" onClick={() => handleEdit(school)}>
@@ -165,8 +207,10 @@ export default function SchoolManagement() {
                   </td>
                 </tr>
               ))}
-              {schools.length === 0 && (
-                <tr><td colSpan={5} className="td-empty">אין מוסדות עדיין</td></tr>
+              {filteredSchools.length === 0 && (
+                <tr><td colSpan={5} className="td-empty">
+                  {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוסדות עדיין'}
+                </td></tr>
               )}
             </tbody>
           </table>
@@ -181,22 +225,35 @@ export default function SchoolManagement() {
               </div>
               <div className="modal-form">
                 <p className="assign-subtitle">בחרו משתמש רשום שישמש כמנהל המוסד:</p>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <div className="search-bar">
+                    <Search size={14} />
+                    <input
+                      value={assignSearch}
+                      onChange={e => setAssignSearch(e.target.value)}
+                      placeholder="חיפוש משתמש..."
+                    />
+                  </div>
+                </div>
                 <div className="assign-list">
-                  {users
-                    .filter(u => u.role !== 'global_admin')
-                    .map(u => (
-                      <button
-                        key={u.id}
-                        className="assign-item"
-                        onClick={() => assignPrincipal(assignModal, u.id)}
-                      >
-                        <div className="assign-avatar">{u.fullName?.charAt(0)}</div>
-                        <div>
-                          <div className="assign-name">{u.fullName}</div>
-                          <div className="assign-email">{u.email}</div>
-                        </div>
-                      </button>
-                    ))}
+                  {assignableUsers.map(u => (
+                    <button
+                      key={u.id}
+                      className="assign-item"
+                      onClick={() => assignPrincipal(assignModal, u.id)}
+                    >
+                      <div className="assign-avatar">{u.fullName?.charAt(0)}</div>
+                      <div>
+                        <div className="assign-name">{u.fullName}</div>
+                        <div className="assign-email">{u.email}</div>
+                      </div>
+                    </button>
+                  ))}
+                  {assignableUsers.length === 0 && (
+                    <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.82rem', padding: '1rem' }}>
+                      לא נמצאו משתמשים
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

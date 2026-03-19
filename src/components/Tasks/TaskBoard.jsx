@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
 import ChatPanel from './ChatPanel';
-import { Plus, Trash2, MessageSquare, Clock, AlertTriangle, AlertCircle, ChevronDown, X } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Clock, AlertTriangle, AlertCircle, ChevronDown, X, Search, Filter } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Tasks.css';
 
@@ -35,6 +35,9 @@ export default function TaskBoard() {
   const [tasks, setTasks] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [chatTask, setChatTask] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterPriority, setFilterPriority] = useState('all');
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -88,18 +91,65 @@ export default function TaskBoard() {
     return new Date(dueDate) < new Date() && new Date(dueDate).toDateString() !== new Date().toDateString();
   }
 
+  // Filter tasks
+  const filteredTasks = tasks.filter(task => {
+    if (filterStatus !== 'all' && task.status !== filterStatus) return false;
+    if (filterPriority !== 'all' && task.priority !== filterPriority) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      return (
+        (task.title || '').toLowerCase().includes(q) ||
+        (task.description || '').toLowerCase().includes(q) ||
+        (task.assignee || '').toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
   return (
     <div className="page">
       <Header title="משימות" />
       <div className="page-content">
         <div className="page-toolbar">
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-            <Plus size={16} />
-            משימה חדשה
-          </button>
-          <span className="task-stats">
-            {tasks.filter(t => t.status === 'done').length}/{tasks.length} הושלמו
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+              <Plus size={16} />
+              משימה חדשה
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div className="search-bar" style={{ minWidth: 160 }}>
+              <Search size={14} />
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="חיפוש משימות..."
+              />
+            </div>
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+              style={{ padding: '0.35rem 0.5rem', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: '0.78rem', background: '#f8fafc', fontFamily: 'Inter, sans-serif' }}
+            >
+              <option value="all">כל הסטטוסים</option>
+              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                <option key={key} value={key}>{cfg.label}</option>
+              ))}
+            </select>
+            <select
+              value={filterPriority}
+              onChange={e => setFilterPriority(e.target.value)}
+              style={{ padding: '0.35rem 0.5rem', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: '0.78rem', background: '#f8fafc', fontFamily: 'Inter, sans-serif' }}
+            >
+              <option value="all">כל הדחיפויות</option>
+              {Object.entries(PRIORITY_CONFIG).map(([key, cfg]) => (
+                <option key={key} value={key}>{cfg.label}</option>
+              ))}
+            </select>
+            <span className="task-stats">
+              {tasks.filter(t => t.status === 'done').length}/{tasks.length} הושלמו
+            </span>
+          </div>
         </div>
 
         {showForm && (
@@ -140,7 +190,7 @@ export default function TaskBoard() {
         )}
 
         <div className="task-list">
-          {tasks.map(task => {
+          {filteredTasks.map(task => {
             const prio = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.medium;
             const status = STATUS_CONFIG[task.status] || STATUS_CONFIG.todo;
             const PrioIcon = prio.icon;
@@ -197,9 +247,9 @@ export default function TaskBoard() {
               </div>
             );
           })}
-          {tasks.length === 0 && (
+          {filteredTasks.length === 0 && (
             <div className="empty-state">
-              <p>אין משימות עדיין</p>
+              <p>{searchQuery || filterStatus !== 'all' || filterPriority !== 'all' ? 'לא נמצאו תוצאות' : 'אין משימות עדיין'}</p>
             </div>
           )}
         </div>

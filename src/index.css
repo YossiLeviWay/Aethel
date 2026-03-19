@@ -259,4 +259,53 @@ a:hover {
   .form-row {
     flex-direction: column;
   }
+
+  .page-toolbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .data-table {
+    font-size: 0.78rem;
+  }
+
+  .data-table th {
+    padding: 0.5rem 0.5rem;
+    font-size: 0.72rem;
+  }
+
+  .data-table td {
+    padding: 0.45rem 0.5rem;
+    font-size: 0.78rem;
+  }
+
+  .btn {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.78rem;
+  }
+
+  .card {
+    padding: 0.75rem;
+  }
+
+  .inline-form .form-group input,
+  .inline-form .form-group select {
+    font-size: 0.78rem;
+    padding: 0.45rem 0.6rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-content {
+    padding: 0.5rem;
+  }
+
+  .data-table-wrap {
+    margin: 0 -0.5rem;
+  }
+
+  .td-actions {
+    flex-direction: column;
+    gap: 0.15rem;
+  }
 }

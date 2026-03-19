@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
 import {
@@ -13,7 +13,7 @@ import {
   orderBy
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Plus, Trash2, Save, Table2, X } from 'lucide-react';
+import { Plus, Trash2, Save, Table2, X, Search, GripVertical } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './DataMapper.css';
 
@@ -25,6 +25,8 @@ export default function ExcelWriter() {
   const [showNewSheet, setShowNewSheet] = useState(false);
   const [newSheetName, setNewSheetName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [columnWidths, setColumnWidths] = useState({});
 
   const schoolId = selectedSchool || userData?.schoolId;
 
@@ -51,26 +53,37 @@ export default function ExcelWriter() {
 
   async function createSheet(e) {
     e.preventDefault();
-    if (!newSheetName.trim() || !schoolId) return;
-    const newDoc = await addDoc(collection(db, `sheets_${schoolId}`), {
-      name: newSheetName.trim(),
-      columns: ['עמודה 1', 'עמודה 2', 'עמודה 3'],
-      rows: [['', '', '']],
-      createdBy: userData?.fullName || '',
-      createdAt: new Date().toISOString()
-    });
-    setActiveSheet(newDoc.id);
-    setNewSheetName('');
-    setShowNewSheet(false);
+    e.stopPropagation();
+    const name = newSheetName.trim();
+    if (!name || !schoolId) return;
+    try {
+      const newDoc = await addDoc(collection(db, `sheets_${schoolId}`), {
+        name,
+        columns: ['עמודה 1', 'עמודה 2', 'עמודה 3'],
+        rows: [['', '', '']],
+        createdBy: userData?.fullName || '',
+        createdAt: new Date().toISOString()
+      });
+      setActiveSheet(newDoc.id);
+      setNewSheetName('');
+      setShowNewSheet(false);
+    } catch (err) {
+      console.error('Error creating sheet:', err);
+      alert('שגיאה ביצירת הטבלה: ' + err.message);
+    }
   }
 
   async function saveSheet() {
     if (!activeSheet || !schoolId) return;
     setSaving(true);
-    await updateDoc(doc(db, `sheets_${schoolId}`, activeSheet), {
-      columns: sheetData.columns,
-      rows: sheetData.rows
-    });
+    try {
+      await updateDoc(doc(db, `sheets_${schoolId}`, activeSheet), {
+        columns: sheetData.columns,
+        rows: sheetData.rows
+      });
+    } catch (err) {
+      alert('שגיאה בשמירה: ' + err.message);
+    }
     setSaving(false);
   }
 
@@ -119,6 +132,12 @@ export default function ExcelWriter() {
       columns: prev.columns.filter((_, i) => i !== index),
       rows: prev.rows.map(r => r.filter((_, i) => i !== index))
     }));
+    // Clean up width
+    setColumnWidths(prev => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
   }
 
   function removeRow(index) {
@@ -129,7 +148,36 @@ export default function ExcelWriter() {
     }));
   }
 
+  // Column resize handler
+  const handleColumnResize = useCallback((colIndex, e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = columnWidths[colIndex] || 150;
+
+    function onMouseMove(ev) {
+      const diff = ev.clientX - startX;
+      setColumnWidths(prev => ({
+        ...prev,
+        [colIndex]: Math.max(80, startWidth + diff)
+      }));
+    }
+
+    function onMouseUp() {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [columnWidths]);
+
   const activeSheetData = sheets.find(s => s.id === activeSheet);
+
+  // Filter sheets
+  const filteredSheets = sheets.filter(s => {
+    if (!searchQuery.trim()) return true;
+    return s.name.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   return (
     <div className="page">
@@ -140,7 +188,12 @@ export default function ExcelWriter() {
           <div className="sheets-panel">
             <div className="sheets-header">
               <h3>טבלאות</h3>
-              <button className="icon-btn" onClick={() => setShowNewSheet(true)} title="טבלה חדשה">
+              <button
+                className="icon-btn"
+                onClick={() => setShowNewSheet(true)}
+                title="טבלה חדשה"
+                type="button"
+              >
                 <Plus size={16} />
               </button>
             </div>
@@ -155,13 +208,25 @@ export default function ExcelWriter() {
                 />
                 <div className="form-actions">
                   <button type="submit" className="btn btn-primary btn-sm">צור</button>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowNewSheet(false)}>ביטול</button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setShowNewSheet(false); setNewSheetName(''); }}>ביטול</button>
                 </div>
               </form>
             )}
 
+            <div style={{ padding: '0.35rem 0.35rem 0' }}>
+              <div className="search-bar" style={{ minWidth: 'auto' }}>
+                <Search size={12} />
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="חיפוש..."
+                  style={{ fontSize: '0.75rem' }}
+                />
+              </div>
+            </div>
+
             <div className="sheet-list">
-              {sheets.map(s => (
+              {filteredSheets.map(s => (
                 <div
                   key={s.id}
                   className={`sheet-item ${activeSheet === s.id ? 'sheet-item--active' : ''}`}
@@ -177,7 +242,7 @@ export default function ExcelWriter() {
                   </button>
                 </div>
               ))}
-              {sheets.length === 0 && <p className="sheets-empty">אין טבלאות</p>}
+              {filteredSheets.length === 0 && <p className="sheets-empty">{searchQuery ? 'לא נמצאו תוצאות' : 'אין טבלאות'}</p>}
             </div>
           </div>
 
@@ -201,12 +266,16 @@ export default function ExcelWriter() {
                 </div>
 
                 <div className="excel-table-wrap">
-                  <table className="excel-table">
+                  <table className="excel-table" style={{ tableLayout: 'fixed' }}>
                     <thead>
                       <tr>
-                        <th className="excel-row-num">#</th>
+                        <th className="excel-row-num" style={{ width: 40 }}>#</th>
                         {sheetData.columns.map((col, ci) => (
-                          <th key={ci} className="excel-col-header">
+                          <th
+                            key={ci}
+                            className="excel-col-header"
+                            style={{ width: columnWidths[ci] || 150, position: 'relative' }}
+                          >
                             <input
                               value={col}
                               onChange={e => updateColumn(ci, e.target.value)}
@@ -220,6 +289,10 @@ export default function ExcelWriter() {
                                 <X size={10} />
                               </button>
                             )}
+                            <div
+                              className="excel-col-resize"
+                              onMouseDown={e => handleColumnResize(ci, e)}
+                            />
                           </th>
                         ))}
                       </tr>
@@ -239,7 +312,7 @@ export default function ExcelWriter() {
                             )}
                           </td>
                           {row.map((cell, ci) => (
-                            <td key={ci} className="excel-cell">
+                            <td key={ci} className="excel-cell" style={{ width: columnWidths[ci] || 150 }}>
                               <input
                                 value={cell}
                                 onChange={e => updateCell(ri, ci, e.target.value)}

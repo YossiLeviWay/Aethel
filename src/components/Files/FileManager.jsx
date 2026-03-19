@@ -31,7 +31,8 @@ import {
   FileEdit,
   Plus,
   Save,
-  ArrowLeft
+  ArrowLeft,
+  Search
 } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Files.css';
@@ -52,6 +53,7 @@ export default function FileManager() {
   const [newFileName, setNewFileName] = useState('');
   const [newFileType, setNewFileType] = useState(null); // 'spreadsheet' | 'document'
   const [fileSaving, setFileSaving] = useState(false);
+  const [fileSearch, setFileSearch] = useState('');
 
   const schoolId = selectedSchool || userData?.schoolId;
   const canManage = isPrincipal() || isGlobalAdmin();
@@ -313,8 +315,22 @@ export default function FileManager() {
               </form>
             )}
 
+            <div style={{ padding: '0.35rem 0.35rem 0' }}>
+              <div className="search-bar" style={{ minWidth: 'auto' }}>
+                <Search size={12} />
+                <input
+                  value={fileSearch}
+                  onChange={e => setFileSearch(e.target.value)}
+                  placeholder="חיפוש..."
+                  style={{ fontSize: '0.75rem' }}
+                />
+              </div>
+            </div>
+
             <div className="folder-list">
-              {folders.map(f => (
+              {folders
+                .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()))
+                .map(f => (
                 <div
                   key={f.id}
                   className={`folder-item ${currentFolder === f.id ? 'folder-item--active' : ''}`}
@@ -402,7 +418,9 @@ export default function FileManager() {
                 )}
 
                 <div className="file-list">
-                  {files.map(f => (
+                  {files
+                    .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()))
+                    .map(f => (
                     <div key={f.id} className="file-item" onClick={() => openFile(f)}>
                       {getFileIcon(f)}
                       <div className="file-info">

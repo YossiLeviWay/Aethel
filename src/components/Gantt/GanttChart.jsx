@@ -16,7 +16,7 @@ import Header from '../Layout/Header';
 import EventModal from './EventModal';
 import YearlyOverview from './YearlyOverview';
 import { getHolidaysForMonth } from '../../data/holidays';
-import { ChevronDown, Eye, Plus } from 'lucide-react';
+import { ChevronDown, Eye, Plus, Search } from 'lucide-react';
 import './Gantt.css';
 
 const HEBREW_DAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
@@ -73,6 +73,8 @@ export default function GanttChart() {
   const [tooltip, setTooltip] = useState(null);
   const [columnWidths, setColumnWidths] = useState([1, 1, 1, 1, 1, 1, 1]);
   const [rowHeights, setRowHeights] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState('all');
 
   const schoolId = selectedSchool || userData?.schoolId;
   const holidays = getHolidaysForMonth(year, month);
@@ -119,8 +121,21 @@ export default function GanttChart() {
 
   function getEventsForCell(date, category) {
     const key = dateKey(date);
-    return events.filter(e => e.date === key && e.category === category);
+    return events.filter(e => {
+      if (e.date !== key || e.category !== category) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        if (!(e.title || '').toLowerCase().includes(q) &&
+            !(e.description || '').toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
   }
+
+  // Filter categories based on filter
+  const displayCategories = filterCategory === 'all'
+    ? categories
+    : categories.filter(c => c === filterCategory);
 
   function getHolidaysForCell(date) {
     return holidaysByDate[dateKey(date)] || [];
@@ -269,6 +284,27 @@ export default function GanttChart() {
           </div>
         </div>
         <div className="gantt-controls-actions">
+          <div className="search-bar" style={{ minWidth: 140 }}>
+            <Search size={14} />
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="חיפוש אירוע..."
+              style={{ fontSize: '0.78rem' }}
+            />
+          </div>
+          {categories.length > 1 && (
+            <select
+              value={filterCategory}
+              onChange={e => setFilterCategory(e.target.value)}
+              style={{ padding: '0.35rem 0.5rem', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: '0.78rem', background: '#f8fafc', fontFamily: 'Inter, sans-serif' }}
+            >
+              <option value="all">כל הקטגוריות</option>
+              {categories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          )}
           {holidays.length > 0 && (
             <div className="gantt-holiday-badge">
               {holidays.length} חגים/חופשות
@@ -309,14 +345,14 @@ export default function GanttChart() {
               const weekEnd = week[6].getDate();
               const label = `${weekStart}-${weekEnd}`;
 
-              return categories.map((cat, ci) => {
+              return displayCategories.map((cat, ci) => {
                 const rowKey = `${wi}-${ci}`;
                 const rowH = rowHeights[rowKey] || 42;
 
                 return (
                   <tr key={rowKey} className={ci === 0 ? 'gantt-week-start' : ''}>
                     {ci === 0 && (
-                      <td className="gantt-category-cell gantt-week-label" rowSpan={categories.length}>
+                      <td className="gantt-category-cell gantt-week-label" rowSpan={displayCategories.length}>
                         <div className="gantt-week-num">שבוע {wi + 1}</div>
                         <div className="gantt-week-dates">{label}</div>
                       </td>
