@@ -14,7 +14,8 @@ import {
   ChevronLeft,
   School,
   LayoutGrid,
-  Menu
+  Menu,
+  MessageCircle
 } from 'lucide-react';
 import { AVATAR_OPTIONS } from '../../data/avatars';
 import './Layout.css';
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { path: '/files', icon: FolderOpen, label: 'קבצים', requiresSchool: true },
   { path: '/data', icon: Table2, label: 'מיפוי נתונים', requiresSchool: true },
   { path: '/teams', icon: Users, label: 'צוותים', requiresSchool: true },
+  { path: '/messages', icon: MessageCircle, label: 'הודעות', all: true },
   { path: '/schools', icon: School, label: 'ניהול מוסדות', roles: ['global_admin'] },
   { path: '/settings', icon: Settings, label: 'הגדרות', all: true }
 ];

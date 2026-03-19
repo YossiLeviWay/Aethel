@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
 import ChatPanel from './ChatPanel';
-import { Plus, Trash2, MessageSquare, Clock, AlertTriangle, AlertCircle, ChevronDown, X, Search, Filter, Users } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Clock, AlertTriangle, AlertCircle, ChevronDown, X, Search, Filter, Users, Edit3, Save } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Tasks.css';
 
@@ -45,8 +45,11 @@ export default function TaskBoard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
+  const [filterTeam, setFilterTeam] = useState('all');
   const [staff, setStaff] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [editingTask, setEditingTask] = useState(null);
+  const [editForm, setEditForm] = useState(null);
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -72,7 +75,6 @@ export default function TaskBoard() {
     return unsub;
   }, [schoolId]);
 
-  // Load staff
   useEffect(() => {
     if (!schoolId) return;
     async function fetchStaff() {
@@ -93,7 +95,6 @@ export default function TaskBoard() {
     fetchStaff();
   }, [schoolId]);
 
-  // Load teams
   useEffect(() => {
     if (!schoolId) return;
     const unsub = onSnapshot(collection(db, `teams_${schoolId}`), (snap) => {
@@ -106,11 +107,24 @@ export default function TaskBoard() {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
+  function handleEditChange(e) {
+    setEditForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  }
+
   function toggleAssignee(userId) {
     setForm(prev => {
       const ids = prev.assigneeIds.includes(userId)
         ? prev.assigneeIds.filter(id => id !== userId)
         : [...prev.assigneeIds, userId];
+      return { ...prev, assigneeIds: ids };
+    });
+  }
+
+  function toggleEditAssignee(userId) {
+    setEditForm(prev => {
+      const ids = (prev.assigneeIds || []).includes(userId)
+        ? prev.assigneeIds.filter(id => id !== userId)
+        : [...(prev.assigneeIds || []), userId];
       return { ...prev, assigneeIds: ids };
     });
   }
@@ -137,6 +151,41 @@ export default function TaskBoard() {
     setShowForm(false);
   }
 
+  function startEdit(task) {
+    setEditingTask(task.id);
+    setEditForm({
+      title: task.title || '',
+      description: task.description || '',
+      priority: task.priority || 'medium',
+      status: task.status || 'todo',
+      dueDate: task.dueDate || '',
+      assigneeType: task.assigneeType || 'all_school',
+      assigneeIds: task.assigneeIds || [],
+      assigneeTeamId: task.assigneeTeamId || ''
+    });
+  }
+
+  async function saveEdit() {
+    if (!editingTask || !editForm || !schoolId) return;
+    await updateDoc(doc(db, `tasks_${schoolId}`, editingTask), {
+      title: editForm.title,
+      description: editForm.description,
+      priority: editForm.priority,
+      status: editForm.status,
+      dueDate: editForm.dueDate,
+      assigneeType: editForm.assigneeType,
+      assigneeIds: editForm.assigneeType === 'individual' ? editForm.assigneeIds : [],
+      assigneeTeamId: editForm.assigneeType === 'team' ? editForm.assigneeTeamId : ''
+    });
+    setEditingTask(null);
+    setEditForm(null);
+  }
+
+  function cancelEdit() {
+    setEditingTask(null);
+    setEditForm(null);
+  }
+
   async function updateTaskStatus(taskId, newStatus) {
     await updateDoc(doc(db, `tasks_${schoolId}`, taskId), { status: newStatus });
   }
@@ -152,14 +201,8 @@ export default function TaskBoard() {
   }
 
   function getAssigneeDisplay(task) {
-    // Support old format (simple string)
-    if (task.assignee && !task.assigneeType) {
-      return task.assignee;
-    }
-
-    if (task.assigneeType === 'all_school') {
-      return 'כל בית הספר';
-    }
+    if (task.assignee && !task.assigneeType) return task.assignee;
+    if (task.assigneeType === 'all_school') return 'כל בית הספר';
     if (task.assigneeType === 'team') {
       const team = teams.find(t => t.id === task.assigneeTeamId);
       return team ? team.name : 'צוות';
@@ -179,6 +222,9 @@ export default function TaskBoard() {
   const filteredTasks = tasks.filter(task => {
     if (filterStatus !== 'all' && task.status !== filterStatus) return false;
     if (filterPriority !== 'all' && task.priority !== filterPriority) return false;
+    if (filterTeam !== 'all') {
+      if (task.assigneeType !== 'team' || task.assigneeTeamId !== filterTeam) return false;
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const assigneeText = getAssigneeDisplay(task).toLowerCase();
@@ -231,6 +277,18 @@ export default function TaskBoard() {
                 <option key={key} value={key}>{cfg.label}</option>
               ))}
             </select>
+            {teams.length > 0 && (
+              <select
+                value={filterTeam}
+                onChange={e => setFilterTeam(e.target.value)}
+                style={{ padding: '0.35rem 0.5rem', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: '0.78rem', background: '#f8fafc', fontFamily: 'Inter, sans-serif' }}
+              >
+                <option value="all">כל הצוותים</option>
+                {teams.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            )}
             <span className="task-stats">
               {tasks.filter(t => t.status === 'done').length}/{tasks.length} הושלמו
             </span>
@@ -263,7 +321,6 @@ export default function TaskBoard() {
                 </div>
               </div>
 
-              {/* Assignee Section */}
               <div className="form-group">
                 <label>שיוך משימה</label>
                 <select name="assigneeType" value={form.assigneeType} onChange={handleChange}>
@@ -316,6 +373,101 @@ export default function TaskBoard() {
           </div>
         )}
 
+        {/* Edit modal */}
+        {editingTask && editForm && (
+          <div className="task-edit-overlay" onClick={cancelEdit}>
+            <div className="task-edit-modal" onClick={e => e.stopPropagation()}>
+              <div className="task-edit-header">
+                <h3>עריכת משימה</h3>
+                <button className="icon-btn" onClick={cancelEdit}><X size={18} /></button>
+              </div>
+              <div className="task-form">
+                <div className="form-group">
+                  <label>כותרת</label>
+                  <input name="title" value={editForm.title} onChange={handleEditChange} />
+                </div>
+                <div className="form-group">
+                  <label>תיאור</label>
+                  <textarea name="description" value={editForm.description} onChange={handleEditChange} rows={2} />
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>דחיפות</label>
+                    <select name="priority" value={editForm.priority} onChange={handleEditChange}>
+                      {Object.entries(PRIORITY_CONFIG).map(([key, cfg]) => (
+                        <option key={key} value={key}>{cfg.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>סטטוס</label>
+                    <select name="status" value={editForm.status} onChange={handleEditChange}>
+                      {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                        <option key={key} value={key}>{cfg.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>תאריך יעד</label>
+                    <input name="dueDate" type="date" value={editForm.dueDate} onChange={handleEditChange} dir="ltr" />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>שיוך משימה</label>
+                  <select name="assigneeType" value={editForm.assigneeType} onChange={handleEditChange}>
+                    <option value="all_school">כל בית הספר</option>
+                    <option value="team">צוות ספציפי</option>
+                    <option value="individual">אנשי צוות ספציפיים</option>
+                  </select>
+                </div>
+
+                {editForm.assigneeType === 'team' && (
+                  <div className="form-group">
+                    <label>בחירת צוות</label>
+                    <select name="assigneeTeamId" value={editForm.assigneeTeamId} onChange={handleEditChange}>
+                      <option value="">בחרו צוות</option>
+                      {teams.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {editForm.assigneeType === 'individual' && (
+                  <div className="form-group">
+                    <label>בחירת אנשי צוות</label>
+                    <div className="assignee-picker">
+                      {staff.map(u => {
+                        const userId = u.uid || u.id;
+                        const isSelected = (editForm.assigneeIds || []).includes(userId);
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            className={`assignee-chip ${isSelected ? 'assignee-chip--selected' : ''}`}
+                            onClick={() => toggleEditAssignee(userId)}
+                          >
+                            <span className="assignee-chip-avatar">{u.fullName?.charAt(0)}</span>
+                            {u.fullName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-actions">
+                  <button type="button" className="btn btn-primary" onClick={saveEdit}>
+                    <Save size={14} /> שמירה
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={cancelEdit}>ביטול</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="task-list">
           {filteredTasks.map(task => {
             const prio = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.medium;
@@ -364,6 +516,13 @@ export default function TaskBoard() {
                 <div className="task-actions">
                   <button
                     className="icon-btn"
+                    title="עריכה"
+                    onClick={() => startEdit(task)}
+                  >
+                    <Edit3 size={15} />
+                  </button>
+                  <button
+                    className="icon-btn"
                     title="צ'אט"
                     onClick={() => setChatTask(task)}
                   >
@@ -382,7 +541,7 @@ export default function TaskBoard() {
           })}
           {filteredTasks.length === 0 && (
             <div className="empty-state">
-              <p>{searchQuery || filterStatus !== 'all' || filterPriority !== 'all' ? 'לא נמצאו תוצאות' : 'אין משימות עדיין'}</p>
+              <p>{searchQuery || filterStatus !== 'all' || filterPriority !== 'all' || filterTeam !== 'all' ? 'לא נמצאו תוצאות' : 'אין משימות עדיין'}</p>
             </div>
           )}
         </div>

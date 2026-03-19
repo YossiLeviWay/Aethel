@@ -13,9 +13,40 @@ import {
   orderBy
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Plus, Trash2, Save, Table2, X, Search, GripVertical } from 'lucide-react';
+import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './DataMapper.css';
+
+function parseNumber(val) {
+  if (val === '' || val === null || val === undefined) return NaN;
+  const n = Number(String(val).replace(/,/g, ''));
+  return n;
+}
+
+function getColumnNumbers(rows, colIndex) {
+  return rows.map(r => parseNumber(r[colIndex])).filter(n => !isNaN(n));
+}
+
+function calcSum(nums) { return nums.reduce((a, b) => a + b, 0); }
+function calcAvg(nums) { return nums.length ? calcSum(nums) / nums.length : 0; }
+function calcMedian(nums) {
+  if (!nums.length) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+function calcMin(nums) { return nums.length ? Math.min(...nums) : 0; }
+function calcMax(nums) { return nums.length ? Math.max(...nums) : 0; }
+function calcCount(nums) { return nums.length; }
+
+const CALC_FUNCTIONS = [
+  { id: 'sum', label: 'סכום', fn: calcSum, icon: '+' },
+  { id: 'avg', label: 'ממוצע', fn: calcAvg, icon: 'x̄' },
+  { id: 'median', label: 'חציון', fn: calcMedian, icon: 'M' },
+  { id: 'min', label: 'מינימום', fn: calcMin, icon: '↓' },
+  { id: 'max', label: 'מקסימום', fn: calcMax, icon: '↑' },
+  { id: 'count', label: 'ספירה', fn: calcCount, icon: '#' },
+];
 
 export default function ExcelWriter() {
   const { userData, selectedSchool } = useAuth();
@@ -27,6 +58,10 @@ export default function ExcelWriter() {
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [columnWidths, setColumnWidths] = useState({});
+  const [showCalcRow, setShowCalcRow] = useState(false);
+  const [calcType, setCalcType] = useState('sum');
+  const [editingCell, setEditingCell] = useState(null);
+  const [formulaBar, setFormulaBar] = useState('');
 
   const schoolId = selectedSchool || userData?.schoolId;
 
@@ -118,6 +153,31 @@ export default function ExcelWriter() {
     });
   }
 
+  // Evaluate simple formulas: =A+B, =A-B, =A*B, =A/B, or just numbers
+  function evaluateCell(value) {
+    if (typeof value !== 'string') return value;
+    const v = value.trim();
+    if (!v.startsWith('=')) return v;
+    try {
+      // Simple arithmetic: replace cell-like patterns aren't needed, just evaluate math
+      const expr = v.slice(1).replace(/[^0-9+\-*/().,%\s]/g, '');
+      if (!expr) return v;
+      // eslint-disable-next-line no-new-func
+      const result = new Function('return ' + expr)();
+      return isNaN(result) || !isFinite(result) ? 'שגיאה' : result;
+    } catch {
+      return 'שגיאה';
+    }
+  }
+
+  function getCellDisplay(value) {
+    if (typeof value === 'string' && value.trim().startsWith('=')) {
+      const result = evaluateCell(value);
+      return result === 'שגיאה' ? 'שגיאה' : String(result);
+    }
+    return value;
+  }
+
   function addColumn() {
     setSheetData(prev => ({
       columns: [...prev.columns, `עמודה ${prev.columns.length + 1}`],
@@ -138,7 +198,6 @@ export default function ExcelWriter() {
       columns: prev.columns.filter((_, i) => i !== index),
       rows: prev.rows.map(r => r.filter((_, i) => i !== index))
     }));
-    // Clean up width
     setColumnWidths(prev => {
       const next = { ...prev };
       delete next[index];
@@ -154,7 +213,6 @@ export default function ExcelWriter() {
     }));
   }
 
-  // Column resize handler
   const handleColumnResize = useCallback((colIndex, e) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -177,9 +235,42 @@ export default function ExcelWriter() {
     document.addEventListener('mouseup', onMouseUp);
   }, [columnWidths]);
 
-  const activeSheetData = sheets.find(s => s.id === activeSheet);
+  function handleCellFocus(ri, ci) {
+    setEditingCell({ ri, ci });
+    setFormulaBar(sheetData.rows[ri]?.[ci] || '');
+  }
 
-  // Filter sheets
+  function handleCellBlur() {
+    setEditingCell(null);
+  }
+
+  function handleFormulaBarChange(e) {
+    const val = e.target.value;
+    setFormulaBar(val);
+    if (editingCell) {
+      updateCell(editingCell.ri, editingCell.ci, val);
+    }
+  }
+
+  // Insert a quick calculation into a new row at the bottom
+  function insertCalcRow(calcId) {
+    const calcFunc = CALC_FUNCTIONS.find(c => c.id === calcId);
+    if (!calcFunc) return;
+    const newRow = sheetData.columns.map((_, ci) => {
+      const nums = getColumnNumbers(sheetData.rows, ci);
+      if (nums.length === 0) return '';
+      const result = calcFunc.fn(nums);
+      return String(Math.round(result * 100) / 100);
+    });
+    setSheetData(prev => ({
+      ...prev,
+      rows: [...prev.rows, newRow]
+    }));
+  }
+
+  const activeSheetData = sheets.find(s => s.id === activeSheet);
+  const currentCalc = CALC_FUNCTIONS.find(c => c.id === calcType);
+
   const filteredSheets = sheets.filter(s => {
     if (!searchQuery.trim()) return true;
     return s.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -194,24 +285,14 @@ export default function ExcelWriter() {
           <div className="sheets-panel">
             <div className="sheets-header">
               <h3>טבלאות</h3>
-              <button
-                className="icon-btn"
-                onClick={() => setShowNewSheet(true)}
-                title="טבלה חדשה"
-                type="button"
-              >
+              <button className="icon-btn" onClick={() => setShowNewSheet(true)} title="טבלה חדשה" type="button">
                 <Plus size={16} />
               </button>
             </div>
 
             {showNewSheet && (
               <form onSubmit={createSheet} className="new-sheet-form">
-                <input
-                  value={newSheetName}
-                  onChange={e => setNewSheetName(e.target.value)}
-                  placeholder="שם הטבלה"
-                  autoFocus
-                />
+                <input value={newSheetName} onChange={e => setNewSheetName(e.target.value)} placeholder="שם הטבלה" autoFocus />
                 <div className="form-actions">
                   <button type="submit" className="btn btn-primary btn-sm">צור</button>
                   <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setShowNewSheet(false); setNewSheetName(''); }}>ביטול</button>
@@ -222,28 +303,16 @@ export default function ExcelWriter() {
             <div style={{ padding: '0.35rem 0.35rem 0' }}>
               <div className="search-bar" style={{ minWidth: 'auto' }}>
                 <Search size={12} />
-                <input
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="חיפוש..."
-                  style={{ fontSize: '0.75rem' }}
-                />
+                <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="חיפוש..." style={{ fontSize: '0.75rem' }} />
               </div>
             </div>
 
             <div className="sheet-list">
               {filteredSheets.map(s => (
-                <div
-                  key={s.id}
-                  className={`sheet-item ${activeSheet === s.id ? 'sheet-item--active' : ''}`}
-                  onClick={() => setActiveSheet(s.id)}
-                >
+                <div key={s.id} className={`sheet-item ${activeSheet === s.id ? 'sheet-item--active' : ''}`} onClick={() => setActiveSheet(s.id)}>
                   <Table2 size={14} />
                   <span className="sheet-name">{s.name}</span>
-                  <button
-                    className="sheet-delete"
-                    onClick={e => { e.stopPropagation(); deleteSheet(s.id); }}
-                  >
+                  <button className="sheet-delete" onClick={e => { e.stopPropagation(); deleteSheet(s.id); }}>
                     <Trash2 size={12} />
                   </button>
                 </div>
@@ -271,34 +340,54 @@ export default function ExcelWriter() {
                   </div>
                 </div>
 
+                {/* Formula bar */}
+                <div className="formula-bar">
+                  <span className="formula-bar-label">
+                    <Type size={12} />
+                    {editingCell ? `${sheetData.columns[editingCell.ci] || ''}` : 'נוסחה'}
+                  </span>
+                  <input
+                    className="formula-bar-input"
+                    value={editingCell ? formulaBar : ''}
+                    onChange={handleFormulaBarChange}
+                    placeholder={editingCell ? 'הקלידו ערך או נוסחה (=2+3, =10*5)...' : 'לחצו על תא לעריכה'}
+                    disabled={!editingCell}
+                  />
+                </div>
+
+                {/* Calculations toolbar */}
+                <div className="calc-toolbar">
+                  <span className="calc-toolbar-label">
+                    <Calculator size={13} />
+                    חישובים:
+                  </span>
+                  <div className="calc-buttons">
+                    {CALC_FUNCTIONS.map(c => (
+                      <button
+                        key={c.id}
+                        className="calc-btn"
+                        onClick={() => insertCalcRow(c.id)}
+                        title={`הוסף שורת ${c.label}`}
+                      >
+                        <span className="calc-btn-icon">{c.icon}</span>
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="excel-table-wrap">
                   <table className="excel-table" style={{ tableLayout: 'fixed' }}>
                     <thead>
                       <tr>
                         <th className="excel-row-num" style={{ width: 40 }}>#</th>
                         {sheetData.columns.map((col, ci) => (
-                          <th
-                            key={ci}
-                            className="excel-col-header"
-                            style={{ width: columnWidths[ci] || 150, position: 'relative' }}
-                          >
-                            <input
-                              value={col}
-                              onChange={e => updateColumn(ci, e.target.value)}
-                              className="excel-col-input"
-                            />
+                          <th key={ci} className="excel-col-header" style={{ width: columnWidths[ci] || 150, position: 'relative' }}>
+                            <input value={col} onChange={e => updateColumn(ci, e.target.value)} className="excel-col-input" />
                             {sheetData.columns.length > 1 && (
-                              <button
-                                className="excel-col-remove"
-                                onClick={() => removeColumn(ci)}
-                              >
-                                <X size={10} />
-                              </button>
+                              <button className="excel-col-remove" onClick={() => removeColumn(ci)}><X size={10} /></button>
                             )}
-                            <div
-                              className="excel-col-resize"
-                              onMouseDown={e => handleColumnResize(ci, e)}
-                            />
+                            <div className="excel-col-resize" onMouseDown={e => handleColumnResize(ci, e)} />
                           </th>
                         ))}
                       </tr>
@@ -309,28 +398,48 @@ export default function ExcelWriter() {
                           <td className="excel-row-num">
                             {ri + 1}
                             {sheetData.rows.length > 1 && (
-                              <button
-                                className="excel-row-remove"
-                                onClick={() => removeRow(ri)}
-                              >
-                                <X size={10} />
-                              </button>
+                              <button className="excel-row-remove" onClick={() => removeRow(ri)}><X size={10} /></button>
                             )}
                           </td>
-                          {row.map((cell, ci) => (
-                            <td key={ci} className="excel-cell" style={{ width: columnWidths[ci] || 150 }}>
-                              <input
-                                value={cell}
-                                onChange={e => updateCell(ri, ci, e.target.value)}
-                                className="excel-cell-input"
-                              />
-                            </td>
-                          ))}
+                          {row.map((cell, ci) => {
+                            const isEditing = editingCell?.ri === ri && editingCell?.ci === ci;
+                            const displayVal = isEditing ? cell : getCellDisplay(cell);
+                            const isFormula = typeof cell === 'string' && cell.trim().startsWith('=');
+                            return (
+                              <td key={ci} className={`excel-cell ${isFormula && !isEditing ? 'excel-cell--formula' : ''}`} style={{ width: columnWidths[ci] || 150 }}>
+                                <input
+                                  value={isEditing ? cell : displayVal}
+                                  onChange={e => {
+                                    updateCell(ri, ci, e.target.value);
+                                    if (isEditing) setFormulaBar(e.target.value);
+                                  }}
+                                  onFocus={() => handleCellFocus(ri, ci)}
+                                  onBlur={handleCellBlur}
+                                  className="excel-cell-input"
+                                />
+                              </td>
+                            );
+                          })}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+
+                {/* Quick summary bar */}
+                {editingCell && (
+                  <div className="calc-summary-bar">
+                    {CALC_FUNCTIONS.slice(0, 4).map(c => {
+                      const nums = getColumnNumbers(sheetData.rows, editingCell.ci);
+                      const result = nums.length > 0 ? Math.round(c.fn(nums) * 100) / 100 : '—';
+                      return (
+                        <span key={c.id} className="calc-summary-item">
+                          {c.label}: <strong>{result}</strong>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </>
             ) : (
               <div className="empty-state">
