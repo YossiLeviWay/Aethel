@@ -227,13 +227,33 @@
   color: #ef4444;
 }
 
+.excel-col-letter {
+  font-size: 0.62rem;
+  color: #94a3b8;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1;
+  margin-bottom: 1px;
+}
+
 .excel-cell {
   padding: 0;
+  user-select: none;
+}
+
+.excel-cell--selected {
+  background: #dbeafe !important;
+}
+
+.excel-cell--focused {
+  box-shadow: inset 0 0 0 2px #2563eb;
+  background: #eff6ff;
 }
 
 .excel-cell-input {
   width: 100%;
-  padding: 0.4rem 0.5rem;
+  height: 100%;
+  padding: 0.3rem 0.5rem;
   border: none;
   font-size: 0.8rem;
   color: #1e293b;
@@ -243,8 +263,22 @@
 
 .excel-cell-input:focus {
   outline: none;
-  background: #eff6ff;
-  box-shadow: inset 0 0 0 2px #2563eb;
+}
+
+/* Row resize handle */
+.excel-row-resize {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  cursor: row-resize;
+  background: transparent;
+  z-index: 5;
+}
+
+.excel-row-resize:hover {
+  background: #2563eb;
 }
 
 /* Column resize handle */
@@ -388,6 +422,17 @@
   font-size: 0.75rem;
   min-width: 14px;
   text-align: center;
+}
+
+/* Selected cell styling */
+.excel-cell--selected {
+  background: #dbeafe !important;
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+}
+
+.excel-cell--selected .excel-cell-input {
+  background: transparent;
 }
 
 /* Formula cell styling */

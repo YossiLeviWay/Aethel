@@ -10,16 +10,19 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  getDocs
+  getDocs,
+  getDoc,
+  setDoc
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
 import EventModal from './EventModal';
 import YearlyOverview from './YearlyOverview';
 import { getHolidaysForMonth } from '../../data/holidays';
-import { ChevronDown, Eye, Plus, Search } from 'lucide-react';
+import { ChevronDown, Eye, Plus, Search, Settings } from 'lucide-react';
 import './Gantt.css';
 
 const HEBREW_DAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
+const ALL_DAY_INDICES = [0, 1, 2, 3, 4, 5, 6]; // Sun=0 ... Sat=6
 const HEBREW_MONTHS = [
   'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
   'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
@@ -75,8 +78,42 @@ export default function GanttChart() {
   const [rowHeights, setRowHeights] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [visibleDays, setVisibleDays] = useState([0, 1, 2, 3, 4, 5, 6]);
+  const [showDaySettings, setShowDaySettings] = useState(false);
 
   const schoolId = selectedSchool || userData?.schoolId;
+
+  // Load visible days setting from Firestore
+  useEffect(() => {
+    if (!schoolId) return;
+    async function loadDaySettings() {
+      try {
+        const docSnap = await getDoc(doc(db, `settings_${schoolId}`, 'calendar'));
+        if (docSnap.exists() && docSnap.data().visibleDays) {
+          setVisibleDays(docSnap.data().visibleDays);
+        }
+      } catch {}
+    }
+    loadDaySettings();
+  }, [schoolId]);
+
+  async function saveDaySettings(days) {
+    setVisibleDays(days);
+    if (!schoolId) return;
+    try {
+      await setDoc(doc(db, `settings_${schoolId}`, 'calendar'), { visibleDays: days }, { merge: true });
+    } catch (err) {
+      console.error('Error saving day settings:', err);
+    }
+  }
+
+  function toggleDay(dayIndex) {
+    const newDays = visibleDays.includes(dayIndex)
+      ? visibleDays.filter(d => d !== dayIndex)
+      : [...visibleDays, dayIndex].sort((a, b) => a - b);
+    if (newDays.length === 0) return; // must have at least 1 day
+    saveDaySettings(newDays);
+  }
   const holidays = getHolidaysForMonth(year, month);
 
   // Build a map of holidays by date key
@@ -246,7 +283,8 @@ export default function GanttChart() {
   }, [rowHeights]);
 
   const weeks = getWeeksInMonth(year, month);
-  const totalFlex = columnWidths.reduce((a, b) => a + b, 0);
+  const visibleColumnWidths = visibleDays.map(di => columnWidths[di] || 1);
+  const totalFlex = visibleColumnWidths.reduce((a, b) => a + b, 0);
 
   // Count search matches for feedback
   const searchMatchCount = searchQuery.trim()
@@ -321,6 +359,10 @@ export default function GanttChart() {
               {holidays.length} חגים/חופשות
             </div>
           )}
+          <button className="gantt-yearly-btn" onClick={() => setShowDaySettings(!showDaySettings)} title="בחירת ימים">
+            <Settings size={16} />
+            ימים
+          </button>
           <button className="gantt-yearly-btn" onClick={() => setYearlyOpen(true)}>
             <Eye size={16} />
             מבט שנתי
@@ -328,22 +370,39 @@ export default function GanttChart() {
         </div>
       </div>
 
+      {showDaySettings && (
+        <div className="gantt-day-settings">
+          <span className="gantt-day-settings-label">בחרו את הימים שיוצגו בלוח:</span>
+          <div className="gantt-day-toggles">
+            {ALL_DAY_INDICES.map(di => (
+              <button
+                key={di}
+                className={`gantt-day-toggle ${visibleDays.includes(di) ? 'gantt-day-toggle--active' : ''}`}
+                onClick={() => toggleDay(di)}
+              >
+                {HEBREW_DAYS[di]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="gantt-table-wrap">
         <table className="gantt-table">
           <thead>
             <tr>
               <th className="gantt-category-col">שבוע / קטגוריה</th>
-              {HEBREW_DAYS.map((day, i) => (
+              {visibleDays.map((di, vi) => (
                 <th
-                  key={i}
+                  key={di}
                   className="gantt-day-col"
-                  style={{ width: `${(columnWidths[i] / totalFlex) * 100}%` }}
+                  style={{ width: `${(visibleColumnWidths[vi] / totalFlex) * 100}%` }}
                 >
                   <div className="gantt-day-header">
-                    {day}
+                    {HEBREW_DAYS[di]}
                     <div
                       className="gantt-resize-handle"
-                      onMouseDown={e => handleColumnResize(i, e)}
+                      onMouseDown={e => handleColumnResize(di, e)}
                     />
                   </div>
                 </th>
@@ -368,19 +427,21 @@ export default function GanttChart() {
                         <div className="gantt-week-dates">{label}</div>
                       </td>
                     )}
-                    {week.map((date, di) => {
+                    {visibleDays.map((di, vi) => {
+                      const date = week[di];
                       const isCurrentMonth = date.getMonth() === month;
                       const isToday = dateKey(date) === dateKey(new Date());
                       const cellEvents = getEventsForCell(date, cat);
                       const cellHolidays = ci === 0 ? getHolidaysForCell(date) : [];
                       const isHoliday = (holidaysByDate[dateKey(date)] || []).some(h => h.isVacation && !h.isSchoolDay);
+                      const isLastVisible = vi === visibleDays.length - 1;
 
                       return (
                         <td
                           key={di}
                           className={`gantt-cell ${!isCurrentMonth ? 'gantt-cell--dim' : ''} ${isToday ? 'gantt-cell--today' : ''} ${isHoliday ? 'gantt-cell--holiday' : ''}`}
                           style={{
-                            width: `${(columnWidths[di] / totalFlex) * 100}%`,
+                            width: `${(visibleColumnWidths[vi] / totalFlex) * 100}%`,
                             height: rowH
                           }}
                           onClick={() => handleCellClick(date, cat)}
@@ -406,8 +467,7 @@ export default function GanttChart() {
                               {ev.title}
                             </div>
                           ))}
-                          {/* Row resize handle on last column */}
-                          {di === 6 && (
+                          {isLastVisible && (
                             <div
                               className="gantt-row-resize-handle"
                               onMouseDown={e => handleRowResize(rowKey, e)}

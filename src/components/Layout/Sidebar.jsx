@@ -15,7 +15,8 @@ import {
   School,
   LayoutGrid,
   Menu,
-  MessageCircle
+  MessageCircle,
+  Sun
 } from 'lucide-react';
 import { AVATAR_OPTIONS } from '../../data/avatars';
 import './Layout.css';
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
   { path: '/data', icon: Table2, label: 'מיפוי נתונים', requiresSchool: true },
   { path: '/teams', icon: Users, label: 'צוותים', requiresSchool: true },
   { path: '/messages', icon: MessageCircle, label: 'הודעות', all: true },
+  { path: '/holidays', icon: Sun, label: 'חופשות וחגים', roles: ['global_admin', 'principal'] },
   { path: '/schools', icon: School, label: 'ניהול מוסדות', roles: ['global_admin'] },
   { path: '/settings', icon: Settings, label: 'הגדרות', all: true }
 ];

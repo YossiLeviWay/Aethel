@@ -13,6 +13,7 @@ import ExcelWriter from './components/DataMapper/ExcelWriter';
 import SchoolManagement from './components/Schools/SchoolManagement';
 import Teams from './components/Teams/Teams';
 import Messages from './components/Messages/Messages';
+import HolidayManager from './components/Holidays/HolidayManager';
 import Settings from './components/Settings/Settings';
 
 function ProtectedRoute({ children }) {
@@ -80,6 +81,7 @@ export default function App() {
             <Route path="data" element={<SchoolRequiredRoute><ExcelWriter /></SchoolRequiredRoute>} />
             <Route path="teams" element={<SchoolRequiredRoute><Teams /></SchoolRequiredRoute>} />
             <Route path="messages" element={<Messages />} />
+            <Route path="holidays" element={<PrincipalRoute><HolidayManager /></PrincipalRoute>} />
             <Route path="schools" element={<AdminRoute><SchoolManagement /></AdminRoute>} />
             <Route path="settings" element={<Settings />} />
           </Route>
