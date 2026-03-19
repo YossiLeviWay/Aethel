@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
 import {
@@ -17,7 +18,6 @@ import {
 import Header from '../Layout/Header';
 import EventModal from './EventModal';
 import YearlyOverview from './YearlyOverview';
-import { getHolidaysForMonth } from '../../data/holidays';
 import { ChevronDown, Eye, Plus, Search, Settings } from 'lucide-react';
 import './Gantt.css';
 
@@ -62,9 +62,12 @@ function dateKey(date) {
 
 export default function GanttChart() {
   const { selectedSchool, userData } = useAuth();
+  const [searchParams] = useSearchParams();
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
+  const paramYear = searchParams.get('year');
+  const paramMonth = searchParams.get('month');
+  const [year, setYear] = useState(paramYear ? Number(paramYear) : now.getFullYear());
+  const [month, setMonth] = useState(paramMonth !== null ? Number(paramMonth) : now.getMonth());
   const [events, setEvents] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [categoryDocs, setCategoryDocs] = useState([]);
@@ -80,6 +83,7 @@ export default function GanttChart() {
   const [filterCategory, setFilterCategory] = useState('all');
   const [visibleDays, setVisibleDays] = useState([0, 1, 2, 3, 4, 5, 6]);
   const [showDaySettings, setShowDaySettings] = useState(false);
+  const [allHolidays, setAllHolidays] = useState([]);
 
   const schoolId = selectedSchool || userData?.schoolId;
 
@@ -95,6 +99,15 @@ export default function GanttChart() {
       } catch {}
     }
     loadDaySettings();
+  }, [schoolId]);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    const q = query(collection(db, `holidays_${schoolId}`));
+    const unsub = onSnapshot(q, (snap) => {
+      setAllHolidays(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => setAllHolidays([]));
+    return unsub;
   }, [schoolId]);
 
   async function saveDaySettings(days) {
@@ -114,7 +127,13 @@ export default function GanttChart() {
     if (newDays.length === 0) return; // must have at least 1 day
     saveDaySettings(newDays);
   }
-  const holidays = getHolidaysForMonth(year, month);
+  const holidays = allHolidays.filter(h => {
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0);
+    const start = new Date(h.startDate + 'T00:00:00');
+    const end = new Date((h.endDate || h.startDate) + 'T00:00:00');
+    return start <= monthEnd && end >= monthStart;
+  });
 
   // Build a map of holidays by date key
   const holidaysByDate = {};

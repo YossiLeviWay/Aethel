@@ -11,9 +11,10 @@ import {
   updateDoc,
   doc,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  onSnapshot
 } from 'firebase/firestore';
-import { getUpcomingHolidays, getHolidaysForMonth } from '../../data/holidays';
+import { useNavigate } from 'react-router-dom';
 import Header from '../Layout/Header';
 import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck } from 'lucide-react';
 import './Dashboard.css';
@@ -61,6 +62,7 @@ const HOLIDAY_BORDER_COLORS = {
 
 export default function Dashboard() {
   const { userData, selectedSchool, isGlobalAdmin, isPrincipal, approveUser, rejectUser } = useAuth();
+  const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [taskStats, setTaskStats] = useState({ total: 0, pending: 0, completed: 0, overdue: 0 });
   const [staffCount, setStaffCount] = useState(0);
@@ -71,14 +73,28 @@ export default function Dashboard() {
   const [schools, setSchools] = useState([]);
 
   useEffect(() => {
-    const upcoming = getUpcomingHolidays(5);
-    setHolidays(upcoming);
+    if (!selectedSchool) return;
+    const q = query(collection(db, `holidays_${selectedSchool}`));
+    const unsub = onSnapshot(q, (snap) => {
+      const allH = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
 
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    const todayMatches = upcoming.filter(h => h.startDate <= todayStr && h.endDate >= todayStr);
-    setTodayHolidays(todayMatches);
-  }, []);
+      // Upcoming holidays (next 5 from today)
+      const upcoming = allH
+        .filter(h => (h.endDate || h.startDate) >= todayStr)
+        .sort((a, b) => a.startDate.localeCompare(b.startDate))
+        .slice(0, 5);
+      setHolidays(upcoming);
+
+      const todayMatches = upcoming.filter(h => h.startDate <= todayStr && (h.endDate || h.startDate) >= todayStr);
+      setTodayHolidays(todayMatches);
+    }, () => {
+      setHolidays([]);
+      setTodayHolidays([]);
+    });
+    return unsub;
+  }, [selectedSchool]);
 
   // Load schools list for mapping IDs to names
   useEffect(() => {
@@ -435,7 +451,12 @@ export default function Dashboard() {
               ) : (
                 <div className="event-list">
                   {events.map(event => (
-                    <div key={event.id} className="event-card">
+                    <div key={event.id} className="event-card" style={{ cursor: 'pointer' }}
+                      onClick={() => {
+                        const d = new Date(event.date + 'T00:00:00');
+                        navigate(`/calendar?year=${d.getFullYear()}&month=${d.getMonth()}`);
+                      }}
+                    >
                       <div className="event-date-badge">
                         <span className="event-day">
                           {new Date(event.date + 'T00:00:00').getDate()}
@@ -473,7 +494,11 @@ export default function Dashboard() {
                     <div
                       key={idx}
                       className="holiday-card"
-                      style={{ borderRightColor: HOLIDAY_BORDER_COLORS[holiday.type] || '#e2e8f0' }}
+                      style={{ borderRightColor: HOLIDAY_BORDER_COLORS[holiday.type] || '#e2e8f0', cursor: 'pointer' }}
+                      onClick={() => {
+                        const d = new Date(holiday.startDate + 'T00:00:00');
+                        navigate(`/calendar?year=${d.getFullYear()}&month=${d.getMonth()}`);
+                      }}
                     >
                       <div className="holiday-info">
                         <span className="holiday-name">{holiday.name}</span>

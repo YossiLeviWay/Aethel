@@ -11,7 +11,6 @@ import {
   updateDoc,
   doc,
   getDocs,
-  or
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
 import { Send, Search, Mail, MailOpen, Circle, User } from 'lucide-react';
@@ -45,11 +44,14 @@ export default function Messages() {
     if (!uid) return;
     const q = query(
       collection(db, 'conversations'),
-      where('participants', 'array-contains', uid),
-      orderBy('lastMessageAt', 'desc')
+      where('participants', 'array-contains', uid)
     );
     const unsub = onSnapshot(q, (snap) => {
-      setConversations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const convs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      convs.sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''));
+      setConversations(convs);
+    }, (err) => {
+      console.error('Error loading conversations:', err);
     });
     return unsub;
   }, [uid]);
@@ -64,6 +66,8 @@ export default function Messages() {
     const unsub = onSnapshot(q, (snap) => {
       setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    }, (err) => {
+      console.error('Error loading messages:', err);
     });
     // Mark as read
     if (activeConv.unreadBy?.includes(uid)) {

@@ -486,6 +486,9 @@ export default function TaskBoard() {
                   <div className="task-title">{task.title}</div>
                   {task.description && <div className="task-desc">{task.description}</div>}
                   <div className="task-meta">
+                    <span className="task-priority-badge" style={{ background: prio.bg, color: prio.color, padding: '0.15rem 0.5rem', borderRadius: 12, fontSize: '0.7rem', fontWeight: 600 }}>
+                      {prio.label}
+                    </span>
                     {assigneeDisplay && (
                       <span className="task-assignee">
                         {task.assigneeType === 'team' && <Users size={11} style={{ marginLeft: '0.2rem', verticalAlign: 'middle' }} />}
@@ -495,6 +498,11 @@ export default function TaskBoard() {
                     {task.dueDate && (
                       <span className={`task-due ${overdue ? 'task-due--late' : ''}`}>
                         {new Date(task.dueDate).toLocaleDateString('he-IL')}
+                      </span>
+                    )}
+                    {task.createdBy && (
+                      <span className="task-created-by" style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                        יוצר: {task.createdBy}
                       </span>
                     )}
                   </div>

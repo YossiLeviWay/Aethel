@@ -10,7 +10,8 @@ import {
   deleteDoc,
   addDoc,
   doc,
-  setDoc
+  setDoc,
+  arrayUnion
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebase';
@@ -31,7 +32,7 @@ export default function StaffManagement() {
   const [staff, setStaff] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   const [editingUser, setEditingUser] = useState(null);
-  const [editForm, setEditForm] = useState({ role: '', jobTitle: '' });
+  const [editForm, setEditForm] = useState({ role: '', jobTitle: '', assignedSchoolId: '' });
   const [viewMode, setViewMode] = useState('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -103,10 +104,14 @@ export default function StaffManagement() {
   }
 
   async function handleUpdateRole(userId) {
-    await updateDoc(doc(db, 'users', userId), {
+    const updateData = {
       role: editForm.role,
       jobTitle: editForm.jobTitle
-    });
+    };
+    if (editForm.assignedSchoolId) {
+      updateData.schoolIds = arrayUnion(editForm.assignedSchoolId);
+    }
+    await updateDoc(doc(db, 'users', userId), updateData);
     setEditingUser(null);
     loadStaff();
   }
@@ -119,7 +124,7 @@ export default function StaffManagement() {
 
   function startEdit(user) {
     setEditingUser(user.id);
-    setEditForm({ role: user.role, jobTitle: user.jobTitle || '' });
+    setEditForm({ role: user.role, jobTitle: user.jobTitle || '', assignedSchoolId: '' });
   }
 
   async function handleAddStaff(e) {
@@ -339,6 +344,18 @@ export default function StaffManagement() {
                             placeholder="תפקיד"
                             style={{ padding: '0.3rem 0.5rem', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: '0.78rem', fontFamily: 'Inter, sans-serif', maxWidth: 120 }}
                           />
+                          {isAdmin && (
+                            <select
+                              value={editForm.assignedSchoolId}
+                              onChange={e => setEditForm(prev => ({ ...prev, assignedSchoolId: e.target.value }))}
+                              style={{ padding: '0.3rem 0.5rem', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: '0.78rem', fontFamily: 'Inter, sans-serif', maxWidth: 140 }}
+                            >
+                              <option value="">שיוך למוסד נוסף</option>
+                              {schools.map(s => (
+                                <option key={s.id} value={s.id}>{s.name || s.id}</option>
+                              ))}
+                            </select>
+                          )}
                           <button className="btn btn-primary btn-sm" onClick={() => handleUpdateRole(user.id)}>
                             שמירה
                           </button>

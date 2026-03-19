@@ -139,6 +139,9 @@ export default function ExcelWriter() {
   const [formulaBar, setFormulaBar] = useState('');
   const [selection, setSelection] = useState(null);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [showFnPicker, setShowFnPicker] = useState(false);
+  const [rangeSelecting, setRangeSelecting] = useState(false);
+  const [formulaPrefix, setFormulaPrefix] = useState('');
   const tableRef = useRef(null);
 
   const schoolId = selectedSchool || userData?.schoolId;
@@ -171,10 +174,23 @@ export default function ExcelWriter() {
   }, [activeSheet, sheets]);
 
   useEffect(() => {
-    function handleUp() { setIsSelecting(false); }
+    function handleUp() {
+      if (isSelecting && rangeSelecting && editingCell) {
+        // Finish range selection - close the parenthesis
+        const currentVal = formulaBar;
+        if (currentVal && !currentVal.endsWith(')')) {
+          const finalVal = currentVal + ')';
+          setFormulaBar(finalVal);
+          updateCell(editingCell.ri, editingCell.ci, finalVal);
+        }
+        setRangeSelecting(false);
+        setFormulaPrefix('');
+      }
+      setIsSelecting(false);
+    }
     window.addEventListener('mouseup', handleUp);
     return () => window.removeEventListener('mouseup', handleUp);
-  }, []);
+  }, [isSelecting, rangeSelecting, editingCell, formulaBar]);
 
   async function createSheet(e) {
     e.preventDefault();
@@ -306,15 +322,45 @@ export default function ExcelWriter() {
 
   function handleCellMouseDown(ri, ci, e) {
     if (e.button !== 0) return;
+
+    if (rangeSelecting && editingCell) {
+      // In range selection mode - build the range reference
+      setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
+      setIsSelecting(true);
+      // Update formula with start cell
+      const ref = cellRef(ri, ci);
+      const val = formulaPrefix + ref;
+      setFormulaBar(val);
+      updateCell(editingCell.ri, editingCell.ci, val);
+      return;
+    }
+
     setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
     setIsSelecting(true);
     setEditingCell({ ri, ci });
     setFormulaBar(sheetData.rows[ri]?.[ci] || '');
+    setRangeSelecting(false);
+    setFormulaPrefix('');
   }
 
   function handleCellMouseEnter(ri, ci) {
     if (!isSelecting) return;
     setSelection(prev => prev ? { ...prev, endRow: ri, endCol: ci } : null);
+
+    if (rangeSelecting && editingCell) {
+      const startRef = cellRef(
+        Math.min(selection.startRow, ri),
+        Math.min(selection.startCol, ci)
+      );
+      const endRef = cellRef(
+        Math.max(selection.startRow, ri),
+        Math.max(selection.startCol, ci)
+      );
+      const rangeStr = startRef === endRef ? startRef : `${startRef}:${endRef}`;
+      const val = formulaPrefix + rangeStr;
+      setFormulaBar(val);
+      updateCell(editingCell.ri, editingCell.ci, val);
+    }
   }
 
   function isInSelection(ri, ci) {
@@ -355,6 +401,28 @@ export default function ExcelWriter() {
     if (editingCell) {
       updateCell(editingCell.ri, editingCell.ci, val);
     }
+    // Show function picker when typing = at the start
+    if (val === '=' || val === '=') {
+      setShowFnPicker(true);
+    } else {
+      setShowFnPicker(false);
+    }
+  }
+
+  function selectFunction(fnId) {
+    const fnName = fnId.toUpperCase();
+    if (fnName === 'COUNT') {
+      // COUNT doesn't need special handling
+    }
+    const prefix = `=${fnName}(`;
+    setFormulaPrefix(prefix);
+    setShowFnPicker(false);
+    setRangeSelecting(true);
+    if (editingCell) {
+      const val = prefix;
+      setFormulaBar(val);
+      updateCell(editingCell.ri, editingCell.ci, val);
+    }
   }
 
   function handleFormulaBarKeyDown(e) {
@@ -370,31 +438,25 @@ export default function ExcelWriter() {
   }
 
   function insertCalcRow(calcId) {
-    const calcFunc = CALC_FUNCTIONS.find(c => c.id === calcId);
-    if (!calcFunc) return;
+    if (!editingCell) return;
+    const fnName = calcId.toUpperCase();
+
     if (selection && (selection.startRow !== selection.endRow || selection.startCol !== selection.endCol)) {
-      const minC = Math.min(selection.startCol, selection.endCol);
-      const maxC = Math.max(selection.startCol, selection.endCol);
-      const minR = Math.min(selection.startRow, selection.endRow);
-      const maxR = Math.max(selection.startRow, selection.endRow);
-      const newRow = sheetData.columns.map((_, ci) => {
-        if (ci < minC || ci > maxC) return '';
-        const nums = [];
-        for (let r = minR; r <= maxR; r++) {
-          const n = parseNumber(getCellDisplay(sheetData.rows[r]?.[ci]));
-          if (!isNaN(n)) nums.push(n);
-        }
-        if (nums.length === 0) return '';
-        return String(Math.round(calcFunc.fn(nums) * 100) / 100);
-      });
-      setSheetData(prev => ({ ...prev, rows: [...prev.rows, newRow] }));
+      // Multi-cell selection exists - build formula for selection
+      const startRef = cellRef(
+        Math.min(selection.startRow, selection.endRow),
+        Math.min(selection.startCol, selection.endCol)
+      );
+      const endRef = cellRef(
+        Math.max(selection.startRow, selection.endRow),
+        Math.max(selection.startCol, selection.endCol)
+      );
+      const formula = `=${fnName}(${startRef}:${endRef})`;
+      updateCell(editingCell.ri, editingCell.ci, formula);
+      setFormulaBar(formula);
     } else {
-      const newRow = sheetData.columns.map((_, ci) => {
-        const nums = sheetData.rows.map(r => parseNumber(getCellDisplay(r[ci]))).filter(n => !isNaN(n));
-        if (nums.length === 0) return '';
-        return String(Math.round(calcFunc.fn(nums) * 100) / 100);
-      });
-      setSheetData(prev => ({ ...prev, rows: [...prev.rows, newRow] }));
+      // No multi-cell selection - enter range selection mode
+      selectFunction(calcId);
     }
   }
 
@@ -458,11 +520,16 @@ export default function ExcelWriter() {
                   </div>
                 </div>
 
-                <div className="formula-bar">
+                <div className="formula-bar" style={{ position: 'relative' }}>
                   <span className="formula-bar-label">
                     <Type size={12} />
                     {editingCell ? cellRef(editingCell.ri, editingCell.ci) : 'נוסחה'}
                   </span>
+                  {rangeSelecting && (
+                    <span style={{ background: '#dbeafe', color: '#2563eb', padding: '0.15rem 0.5rem', borderRadius: 8, fontSize: '0.7rem', fontWeight: 600, marginRight: '0.5rem' }}>
+                      בחרו תאים בגרירה
+                    </span>
+                  )}
                   <input
                     className="formula-bar-input"
                     value={editingCell ? formulaBar : ''}
@@ -471,6 +538,51 @@ export default function ExcelWriter() {
                     placeholder={editingCell ? 'ערך או נוסחה: =2+3, =SUM(A1:A5)...' : 'לחצו על תא'}
                     disabled={!editingCell}
                   />
+                  {showFnPicker && editingCell && (
+                    <div className="fn-picker" style={{
+                      position: 'absolute',
+                      zIndex: 50,
+                      background: '#fff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 8,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                      padding: '0.25rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.15rem',
+                      right: 0,
+                      top: '100%',
+                      minWidth: 160
+                    }}>
+                      {CALC_FUNCTIONS.map(c => (
+                        <button
+                          key={c.id}
+                          className="fn-picker-item"
+                          onClick={() => selectFunction(c.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.4rem 0.6rem',
+                            border: 'none',
+                            background: 'transparent',
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            fontFamily: 'Inter, sans-serif',
+                            textAlign: 'right',
+                            width: '100%'
+                          }}
+                          onMouseEnter={e => e.target.style.background = '#f1f5f9'}
+                          onMouseLeave={e => e.target.style.background = 'transparent'}
+                        >
+                          <span style={{ fontWeight: 700, width: 20, color: '#2563eb' }}>{c.icon}</span>
+                          <span>{c.label}</span>
+                          <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginRight: 'auto' }}>{c.id.toUpperCase()}()</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="calc-toolbar">
@@ -529,8 +641,16 @@ export default function ExcelWriter() {
                                 <input
                                   value={isFocused ? cell : (displayVal || '')}
                                   onChange={e => {
-                                    updateCell(ri, ci, e.target.value);
-                                    if (isFocused) setFormulaBar(e.target.value);
+                                    const val = e.target.value;
+                                    updateCell(ri, ci, val);
+                                    if (isFocused) {
+                                      setFormulaBar(val);
+                                      if (val === '=') {
+                                        setShowFnPicker(true);
+                                      } else if (!val.startsWith('=')) {
+                                        setShowFnPicker(false);
+                                      }
+                                    }
                                   }}
                                   className="excel-cell-input"
                                   tabIndex={-1}
