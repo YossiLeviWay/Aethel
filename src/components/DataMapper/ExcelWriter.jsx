@@ -457,8 +457,28 @@ export default function ExcelWriter() {
     } catch {}
   }
 
-  // Navigate to a cell (navigation mode)
+  // Ensure grid is large enough, then navigate
   function navigateTo(ri, ci) {
+    if (ri < 0 || ci < 0) return;
+    setSheetData(prev => {
+      let { columns, rows } = prev;
+      let changed = false;
+      // Expand columns if needed
+      if (ci >= columns.length) {
+        const extra = ci - columns.length + 1;
+        columns = [...columns, ...Array.from({ length: extra }, (_, i) => `עמודה ${columns.length + i + 1}`)];
+        rows = rows.map(r => [...r, ...new Array(extra).fill('')]);
+        changed = true;
+      }
+      // Expand rows if needed
+      if (ri >= rows.length) {
+        const extra = ri - rows.length + 1;
+        const newRows = Array.from({ length: extra }, () => new Array(columns.length).fill(''));
+        rows = [...rows, ...newRows];
+        changed = true;
+      }
+      return changed ? { columns, rows } : prev;
+    });
     setEditingCell({ ri, ci });
     setFormulaBar(sheetData.rows[ri]?.[ci] || '');
     setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
@@ -467,9 +487,6 @@ export default function ExcelWriter() {
 
   // Keyboard navigation for cells
   function handleCellKeyDown(ri, ci, e) {
-    const maxRow = sheetData.rows.length - 1;
-    const maxCol = sheetData.columns.length - 1;
-
     // Ctrl/Cmd shortcuts always work
     if (e.ctrlKey || e.metaKey) {
       if (e.key === 'c') {
@@ -497,8 +514,8 @@ export default function ExcelWriter() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (cellEditMode) {
-        // Confirm edit, move down
-        navigateTo(Math.min(ri + 1, maxRow), ci);
+        // Confirm edit, move down (auto-expands grid)
+        navigateTo(ri + 1, ci);
       } else {
         // Enter edit mode
         setCellEditMode(true);
@@ -518,10 +535,10 @@ export default function ExcelWriter() {
       return;
     }
 
-    // Tab always navigates
+    // Tab always navigates (auto-expands grid)
     if (e.key === 'Tab') {
       e.preventDefault();
-      const nextCi = e.shiftKey ? Math.max(ci - 1, 0) : Math.min(ci + 1, maxCol);
+      const nextCi = e.shiftKey ? Math.max(ci - 1, 0) : ci + 1;
       navigateTo(ri, nextCi);
       return;
     }
@@ -530,7 +547,7 @@ export default function ExcelWriter() {
     if (!cellEditMode) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        navigateTo(Math.min(ri + 1, maxRow), ci);
+        navigateTo(ri + 1, ci);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         navigateTo(Math.max(ri - 1, 0), ci);
@@ -539,7 +556,7 @@ export default function ExcelWriter() {
         navigateTo(ri, Math.max(ci - 1, 0)); // RTL
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        navigateTo(ri, Math.min(ci + 1, maxCol)); // RTL
+        navigateTo(ri, ci + 1); // RTL - auto-expands grid
       } else if (e.key === 'Delete') {
         pushUndo();
         updateCell(ri, ci, '');
