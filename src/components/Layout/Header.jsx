@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import { Building2, ChevronDown, Check } from 'lucide-react';
+import { Building2, ChevronDown, Check, User } from 'lucide-react';
 import './Layout.css';
 
 export default function Header({ title }) {
@@ -42,9 +42,33 @@ export default function Header({ title }) {
     s.name.includes(search) || (s.address || '').includes(search)
   );
 
+  const avatarStyle = userData?.avatarStyle || 'default';
+  const initial = userData?.fullName?.charAt(0) || '?';
+
+  const ROLE_LABELS_HEADER = {
+    global_admin: 'מנהל על',
+    principal: 'מנהל מוסד',
+    editor: 'עורך',
+    viewer: 'צופה'
+  };
+
   return (
     <header className="app-header">
-      <h2 className="header-title">{title}</h2>
+      <div className="header-right">
+        <h2 className="header-title">{title}</h2>
+      </div>
+
+      <div className="header-left">
+        {/* User info */}
+        <div className="header-user">
+          <div className={`header-avatar avatar-style--${avatarStyle}`}>
+            {initial}
+          </div>
+          <div className="header-user-info">
+            <span className="header-user-name">{userData?.fullName || ''}</span>
+            <span className="header-user-role">{ROLE_LABELS_HEADER[userData?.role] || ''}</span>
+          </div>
+        </div>
 
       {isGlobalAdmin() && schools.length > 0 && (
         <div className="context-switcher" ref={dropdownRef}>
@@ -90,6 +114,7 @@ export default function Header({ title }) {
           )}
         </div>
       )}
+      </div>
     </header>
   );
 }

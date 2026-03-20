@@ -227,13 +227,33 @@
   color: #ef4444;
 }
 
+.excel-col-letter {
+  font-size: 0.62rem;
+  color: #94a3b8;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1;
+  margin-bottom: 1px;
+}
+
 .excel-cell {
   padding: 0;
+  user-select: none;
+}
+
+.excel-cell--selected {
+  background: #dbeafe !important;
+}
+
+.excel-cell--focused {
+  box-shadow: inset 0 0 0 2px #2563eb;
+  background: #eff6ff;
 }
 
 .excel-cell-input {
   width: 100%;
-  padding: 0.4rem 0.5rem;
+  height: 100%;
+  padding: 0.3rem 0.5rem;
   border: none;
   font-size: 0.8rem;
   color: #1e293b;
@@ -243,8 +263,28 @@
 
 .excel-cell-input:focus {
   outline: none;
-  background: #eff6ff;
-  box-shadow: inset 0 0 0 2px #2563eb;
+}
+
+.excel-cell-input--nav {
+  cursor: default;
+  caret-color: transparent;
+  user-select: none;
+}
+
+/* Row resize handle */
+.excel-row-resize {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  cursor: row-resize;
+  background: transparent;
+  z-index: 5;
+}
+
+.excel-row-resize:hover {
+  background: #2563eb;
 }
 
 /* Column resize handle */
@@ -291,6 +331,206 @@
   flex-shrink: 0;
 }
 
+/* Formula Bar */
+.formula-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.formula-bar-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+  min-width: 60px;
+}
+
+.formula-bar-input {
+  flex: 1;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: 'Courier New', monospace;
+  background: #fff;
+  color: #1e293b;
+  direction: ltr;
+  text-align: left;
+}
+
+.formula-bar-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.formula-bar-input:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+/* Calculations Toolbar */
+.calc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 1rem;
+  background: #fff;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.calc-toolbar-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.calc-buttons {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.calc-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 0.7rem;
+  font-family: 'Inter', sans-serif;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.calc-btn:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #2563eb;
+}
+
+.calc-btn-icon {
+  font-weight: 700;
+  font-size: 0.75rem;
+  min-width: 14px;
+  text-align: center;
+}
+
+/* Selected cell styling */
+.excel-cell--selected {
+  background: #dbeafe !important;
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+}
+
+.excel-cell--selected .excel-cell-input {
+  background: transparent;
+}
+
+/* Formula cell styling */
+.excel-cell--formula {
+  background: #f0fdf4;
+}
+
+.excel-cell--formula .excel-cell-input {
+  color: #16a34a;
+  font-weight: 600;
+}
+
+/* Summary bar at bottom */
+.calc-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.4rem 1rem;
+  background: #f1f5f9;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.calc-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.calc-summary-item strong {
+  color: #1e293b;
+}
+
+/* Cut cell */
+.excel-cell--cut {
+  opacity: 0.45;
+  border: 2px dashed #94a3b8 !important;
+}
+
+/* ===== Context Menu ===== */
+.cell-context-menu {
+  position: fixed;
+  z-index: 200;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 0.3rem;
+  min-width: 180px;
+}
+
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.7rem;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-family: 'Inter', sans-serif;
+  color: #334155;
+  cursor: pointer;
+  text-align: right;
+  transition: background 0.12s;
+}
+
+.ctx-item:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.ctx-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ctx-item--danger {
+  color: #ef4444;
+}
+
+.ctx-item--danger:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
+.ctx-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 0.2rem 0;
+}
+
 @media (max-width: 768px) {
   .excel-layout {
     flex-direction: column;
@@ -302,5 +542,13 @@
     border-left: none;
     border-bottom: 1px solid #e2e8f0;
     max-height: 180px;
+  }
+
+  .calc-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .formula-bar {
+    flex-wrap: wrap;
   }
 }

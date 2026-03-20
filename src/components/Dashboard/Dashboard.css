@@ -341,6 +341,123 @@
   white-space: nowrap;
 }
 
+/* Activity Feed */
+.activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.activity-item:hover {
+  background: #f8fafc;
+}
+
+.activity-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.activity-icon--school {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.activity-icon--principal {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.activity-icon--staff {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.activity-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-text {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.activity-detail {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.activity-time {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* School Summary Stats Grid */
+.school-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.school-stat-card {
+  padding: 0.85rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fafbfc;
+  transition: all 0.15s;
+}
+
+.school-stat-card:hover {
+  border-color: #bfdbfe;
+  background: #f8fafc;
+}
+
+.school-stat-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.school-stat-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.school-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.school-stat-item svg {
+  color: #94a3b8;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .dashboard-stats {
@@ -382,4 +499,26 @@
   .holiday-meta {
     flex-wrap: wrap;
   }
+}
+
+/* Recent Announcements in Dashboard */
+.announcement-list-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.announcement-dashboard-card {
+  background: #faf5ff;
+  border: 1px solid #e9d5ff;
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+}
+
+.announcement-dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }

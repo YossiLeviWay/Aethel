@@ -12,7 +12,10 @@ import FileManager from './components/Files/FileManager';
 import ExcelWriter from './components/DataMapper/ExcelWriter';
 import SchoolManagement from './components/Schools/SchoolManagement';
 import Teams from './components/Teams/Teams';
+import Messages from './components/Messages/Messages';
+import HolidayManager from './components/Holidays/HolidayManager';
 import Settings from './components/Settings/Settings';
+import Notifications from './components/Notifications/Notifications';
 
 function ProtectedRoute({ children }) {
   const { currentUser, loading } = useAuth();
@@ -44,6 +47,17 @@ function PrincipalRoute({ children }) {
   return children;
 }
 
+// Requires at least editor role (blocks viewers)
+function EditorRoute({ children }) {
+  const { userData, loading } = useAuth();
+  if (loading) return null;
+  const role = userData?.role;
+  if (role !== 'global_admin' && role !== 'principal' && role !== 'editor') {
+    return <Navigate to="/" />;
+  }
+  return children;
+}
+
 function SchoolRequiredRoute({ children }) {
   const { userData, selectedSchool, loading } = useAuth();
   if (loading) return null;
@@ -51,6 +65,14 @@ function SchoolRequiredRoute({ children }) {
   if (!schoolId) {
     return <Navigate to="/" />;
   }
+  return children;
+}
+
+// Blocks pending users from accessing any route except dashboard
+function ApprovedRoute({ children }) {
+  const { userData, loading, isPending } = useAuth();
+  if (loading) return null;
+  if (isPending()) return <Navigate to="/" />;
   return children;
 }
 
@@ -71,13 +93,16 @@ export default function App() {
 
           <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
-            <Route path="calendar" element={<SchoolRequiredRoute><GanttChart /></SchoolRequiredRoute>} />
-            <Route path="categories" element={<SchoolRequiredRoute><PrincipalRoute><CategoryManager /></PrincipalRoute></SchoolRequiredRoute>} />
-            <Route path="staff" element={<SchoolRequiredRoute><StaffManagement /></SchoolRequiredRoute>} />
-            <Route path="tasks" element={<SchoolRequiredRoute><TaskBoard /></SchoolRequiredRoute>} />
-            <Route path="files" element={<SchoolRequiredRoute><FileManager /></SchoolRequiredRoute>} />
-            <Route path="data" element={<SchoolRequiredRoute><ExcelWriter /></SchoolRequiredRoute>} />
-            <Route path="teams" element={<SchoolRequiredRoute><Teams /></SchoolRequiredRoute>} />
+            <Route path="calendar" element={<ApprovedRoute><SchoolRequiredRoute><GanttChart /></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="categories" element={<ApprovedRoute><SchoolRequiredRoute><PrincipalRoute><CategoryManager /></PrincipalRoute></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="staff" element={<ApprovedRoute><SchoolRequiredRoute><StaffManagement /></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="tasks" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><TaskBoard /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="files" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><FileManager /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="data" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><ExcelWriter /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="teams" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><Teams /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="messages" element={<ApprovedRoute><Messages /></ApprovedRoute>} />
+            <Route path="notifications" element={<ApprovedRoute><Notifications /></ApprovedRoute>} />
+            <Route path="holidays" element={<ApprovedRoute><PrincipalRoute><HolidayManager /></PrincipalRoute></ApprovedRoute>} />
             <Route path="schools" element={<AdminRoute><SchoolManagement /></AdminRoute>} />
             <Route path="settings" element={<Settings />} />
           </Route>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
 import {
@@ -10,16 +11,18 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  getDocs
+  getDocs,
+  getDoc,
+  setDoc
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
 import EventModal from './EventModal';
 import YearlyOverview from './YearlyOverview';
-import { getHolidaysForMonth } from '../../data/holidays';
-import { ChevronDown, Eye, Plus, Search } from 'lucide-react';
+import { ChevronDown, Eye, Plus, Search, Settings } from 'lucide-react';
 import './Gantt.css';
 
 const HEBREW_DAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
+const ALL_DAY_INDICES = [0, 1, 2, 3, 4, 5, 6]; // Sun=0 ... Sat=6
 const HEBREW_MONTHS = [
   'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
   'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
@@ -58,10 +61,13 @@ function dateKey(date) {
 }
 
 export default function GanttChart() {
-  const { selectedSchool, userData } = useAuth();
+  const { selectedSchool, userData, isGlobalAdmin, isPrincipal } = useAuth();
+  const [searchParams] = useSearchParams();
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
+  const paramYear = searchParams.get('year');
+  const paramMonth = searchParams.get('month');
+  const [year, setYear] = useState(paramYear ? Number(paramYear) : now.getFullYear());
+  const [month, setMonth] = useState(paramMonth !== null ? Number(paramMonth) : now.getMonth());
   const [events, setEvents] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [categoryDocs, setCategoryDocs] = useState([]);
@@ -75,9 +81,76 @@ export default function GanttChart() {
   const [rowHeights, setRowHeights] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [visibleDays, setVisibleDays] = useState([0, 1, 2, 3, 4, 5, 6]);
+  const [showDaySettings, setShowDaySettings] = useState(false);
+  const [allHolidays, setAllHolidays] = useState([]);
+  const [userTeamIds, setUserTeamIds] = useState([]);
 
   const schoolId = selectedSchool || userData?.schoolId;
-  const holidays = getHolidaysForMonth(year, month);
+
+  // Load user's team memberships for visibility filtering
+  useEffect(() => {
+    if (!schoolId || !userData?.uid) return;
+    const unsub = onSnapshot(collection(db, `teams_${schoolId}`), (snap) => {
+      const memberTeams = [];
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (Array.isArray(data.memberIds) && data.memberIds.includes(userData.uid)) {
+          memberTeams.push(d.id);
+        }
+      });
+      setUserTeamIds(memberTeams);
+    }, () => setUserTeamIds([]));
+    return unsub;
+  }, [schoolId, userData?.uid]);
+
+  // Load visible days setting from Firestore
+  useEffect(() => {
+    if (!schoolId) return;
+    async function loadDaySettings() {
+      try {
+        const docSnap = await getDoc(doc(db, `settings_${schoolId}`, 'calendar'));
+        if (docSnap.exists() && docSnap.data().visibleDays) {
+          setVisibleDays(docSnap.data().visibleDays);
+        }
+      } catch {}
+    }
+    loadDaySettings();
+  }, [schoolId]);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    const q = query(collection(db, `holidays_${schoolId}`));
+    const unsub = onSnapshot(q, (snap) => {
+      setAllHolidays(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => setAllHolidays([]));
+    return unsub;
+  }, [schoolId]);
+
+  async function saveDaySettings(days) {
+    setVisibleDays(days);
+    if (!schoolId) return;
+    try {
+      await setDoc(doc(db, `settings_${schoolId}`, 'calendar'), { visibleDays: days }, { merge: true });
+    } catch (err) {
+      console.error('Error saving day settings:', err);
+    }
+  }
+
+  function toggleDay(dayIndex) {
+    const newDays = visibleDays.includes(dayIndex)
+      ? visibleDays.filter(d => d !== dayIndex)
+      : [...visibleDays, dayIndex].sort((a, b) => a - b);
+    if (newDays.length === 0) return; // must have at least 1 day
+    saveDaySettings(newDays);
+  }
+  const holidays = allHolidays.filter(h => {
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0);
+    const start = new Date(h.startDate + 'T00:00:00');
+    const end = new Date((h.endDate || h.startDate) + 'T00:00:00');
+    return start <= monthEnd && end >= monthStart;
+  });
 
   // Build a map of holidays by date key
   const holidaysByDate = {};
@@ -119,9 +192,23 @@ export default function GanttChart() {
     return unsub;
   }, [schoolId]);
 
+  // Filter events based on team visibility
+  const canSeeAllEvents = isGlobalAdmin() || isPrincipal();
+
+  function isEventVisible(event) {
+    if (canSeeAllEvents) return true;
+    if (!event.visibleTo || event.visibleTo === 'all') return true;
+    if (Array.isArray(event.visibleTo)) {
+      return event.visibleTo.some(teamId => userTeamIds.includes(teamId));
+    }
+    return true;
+  }
+
   function getEventsForCell(date, category) {
     const key = dateKey(date);
-    const cellEvents = events.filter(e => e.date === key && e.category === category);
+    const cellEvents = events
+      .filter(e => e.date === key && e.category === category)
+      .filter(isEventVisible);
     if (!searchQuery.trim()) return cellEvents;
     const q = searchQuery.toLowerCase();
     return cellEvents.map(e => ({
@@ -246,11 +333,13 @@ export default function GanttChart() {
   }, [rowHeights]);
 
   const weeks = getWeeksInMonth(year, month);
-  const totalFlex = columnWidths.reduce((a, b) => a + b, 0);
+  const visibleColumnWidths = visibleDays.map(di => columnWidths[di] || 1);
+  const totalFlex = visibleColumnWidths.reduce((a, b) => a + b, 0);
 
-  // Count search matches for feedback
+  // Count search matches for feedback (respecting visibility)
   const searchMatchCount = searchQuery.trim()
     ? events.filter(e => {
+        if (!isEventVisible(e)) return false;
         const q = searchQuery.toLowerCase();
         return (e.title || '').toLowerCase().includes(q) ||
                (e.description || '').toLowerCase().includes(q);
@@ -321,6 +410,10 @@ export default function GanttChart() {
               {holidays.length} חגים/חופשות
             </div>
           )}
+          <button className="gantt-yearly-btn" onClick={() => setShowDaySettings(!showDaySettings)} title="בחירת ימים">
+            <Settings size={16} />
+            ימים
+          </button>
           <button className="gantt-yearly-btn" onClick={() => setYearlyOpen(true)}>
             <Eye size={16} />
             מבט שנתי
@@ -328,22 +421,39 @@ export default function GanttChart() {
         </div>
       </div>
 
+      {showDaySettings && (
+        <div className="gantt-day-settings">
+          <span className="gantt-day-settings-label">בחרו את הימים שיוצגו בלוח:</span>
+          <div className="gantt-day-toggles">
+            {ALL_DAY_INDICES.map(di => (
+              <button
+                key={di}
+                className={`gantt-day-toggle ${visibleDays.includes(di) ? 'gantt-day-toggle--active' : ''}`}
+                onClick={() => toggleDay(di)}
+              >
+                {HEBREW_DAYS[di]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="gantt-table-wrap">
         <table className="gantt-table">
           <thead>
             <tr>
               <th className="gantt-category-col">שבוע / קטגוריה</th>
-              {HEBREW_DAYS.map((day, i) => (
+              {visibleDays.map((di, vi) => (
                 <th
-                  key={i}
+                  key={di}
                   className="gantt-day-col"
-                  style={{ width: `${(columnWidths[i] / totalFlex) * 100}%` }}
+                  style={{ width: `${(visibleColumnWidths[vi] / totalFlex) * 100}%` }}
                 >
                   <div className="gantt-day-header">
-                    {day}
+                    <span>{HEBREW_DAYS[di]}</span>
                     <div
                       className="gantt-resize-handle"
-                      onMouseDown={e => handleColumnResize(i, e)}
+                      onMouseDown={e => handleColumnResize(di, e)}
                     />
                   </div>
                 </th>
@@ -356,38 +466,56 @@ export default function GanttChart() {
               const weekEnd = week[6].getDate();
               const label = `${weekStart}-${weekEnd}`;
 
-              return displayCategories.map((cat, ci) => {
+              return [
+                // Date header row for this week
+                <tr key={`dates-${wi}`} className="gantt-week-dates-row">
+                  <td className="gantt-category-cell gantt-week-label" rowSpan={displayCategories.length + 1}>
+                    <div className="gantt-week-num">שבוע {wi + 1}</div>
+                    <div className="gantt-week-dates">{label}</div>
+                  </td>
+                  {visibleDays.map((di, vi) => {
+                    const date = week[di];
+                    const isCurrentMonth = date.getMonth() === month;
+                    const isToday = dateKey(date) === dateKey(new Date());
+                    return (
+                      <td
+                        key={di}
+                        className={`gantt-date-header-cell ${!isCurrentMonth ? 'gantt-cell--dim' : ''} ${isToday ? 'gantt-cell--today' : ''}`}
+                        style={{ width: `${(visibleColumnWidths[vi] / totalFlex) * 100}%` }}
+                      >
+                        <span className="gantt-date-header-day">{HEBREW_DAYS[di]}</span>
+                        <span className="gantt-date-header-num">{date.getDate()}</span>
+                        <span className="gantt-date-header-full">{date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                      </td>
+                    );
+                  })}
+                </tr>,
+                // Category rows
+                ...displayCategories.map((cat, ci) => {
                 const rowKey = `${wi}-${ci}`;
                 const rowH = rowHeights[rowKey] || 42;
 
                 return (
                   <tr key={rowKey} className={ci === 0 ? 'gantt-week-start' : ''}>
-                    {ci === 0 && (
-                      <td className="gantt-category-cell gantt-week-label" rowSpan={displayCategories.length}>
-                        <div className="gantt-week-num">שבוע {wi + 1}</div>
-                        <div className="gantt-week-dates">{label}</div>
-                      </td>
-                    )}
-                    {week.map((date, di) => {
+                    {visibleDays.map((di, vi) => {
+                      const date = week[di];
                       const isCurrentMonth = date.getMonth() === month;
                       const isToday = dateKey(date) === dateKey(new Date());
                       const cellEvents = getEventsForCell(date, cat);
                       const cellHolidays = ci === 0 ? getHolidaysForCell(date) : [];
                       const isHoliday = (holidaysByDate[dateKey(date)] || []).some(h => h.isVacation && !h.isSchoolDay);
+                      const isLastVisible = vi === visibleDays.length - 1;
 
                       return (
                         <td
                           key={di}
                           className={`gantt-cell ${!isCurrentMonth ? 'gantt-cell--dim' : ''} ${isToday ? 'gantt-cell--today' : ''} ${isHoliday ? 'gantt-cell--holiday' : ''}`}
                           style={{
-                            width: `${(columnWidths[di] / totalFlex) * 100}%`,
+                            width: `${(visibleColumnWidths[vi] / totalFlex) * 100}%`,
                             height: rowH
                           }}
                           onClick={() => handleCellClick(date, cat)}
                         >
-                          {ci === 0 && (
-                            <div className="gantt-cell-date">{date.getDate()}</div>
-                          )}
                           {cellHolidays.length > 0 && (
                             <div className="gantt-holiday-tag" title={cellHolidays.map(h => h.name).join(', ')}>
                               {cellHolidays[0].name}
@@ -406,8 +534,7 @@ export default function GanttChart() {
                               {ev.title}
                             </div>
                           ))}
-                          {/* Row resize handle on last column */}
-                          {di === 6 && (
+                          {isLastVisible && (
                             <div
                               className="gantt-row-resize-handle"
                               onMouseDown={e => handleRowResize(rowKey, e)}
@@ -418,7 +545,8 @@ export default function GanttChart() {
                     })}
                   </tr>
                 );
-              });
+              })
+              ];
             })}
           </tbody>
         </table>
@@ -446,6 +574,7 @@ export default function GanttChart() {
           category={selectedCategory}
           categories={categories}
           colors={PASTEL_COLORS}
+          schoolId={schoolId}
           onSave={handleSaveEvent}
           onDelete={editingEvent ? handleDeleteEvent : null}
           onClose={() => setModalOpen(false)}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db, storage } from '../../firebase';
+import PermissionsMenu from '../Shared/PermissionsMenu';
 import {
   collection,
   query,
@@ -54,6 +55,7 @@ export default function FileManager() {
   const [newFileType, setNewFileType] = useState(null); // 'spreadsheet' | 'document'
   const [fileSaving, setFileSaving] = useState(false);
   const [fileSearch, setFileSearch] = useState('');
+  const [permMenu, setPermMenu] = useState(null); // { type, id, name, position }
 
   const schoolId = selectedSchool || userData?.schoolId;
   const canManage = isPrincipal() || isGlobalAdmin();
@@ -335,6 +337,11 @@ export default function FileManager() {
                   key={f.id}
                   className={`folder-item ${currentFolder === f.id ? 'folder-item--active' : ''}`}
                   onClick={() => setCurrentFolder(f.id)}
+                  onContextMenu={e => {
+                    if (!canManage) return;
+                    e.preventDefault();
+                    setPermMenu({ type: 'folder', id: f.id, name: f.name, position: { x: e.clientX, y: e.clientY } });
+                  }}
                 >
                   <Folder size={16} />
                   <span className="folder-name">{f.name}</span>
@@ -421,7 +428,13 @@ export default function FileManager() {
                   {files
                     .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()))
                     .map(f => (
-                    <div key={f.id} className="file-item" onClick={() => openFile(f)}>
+                    <div key={f.id} className="file-item" onClick={() => openFile(f)}
+                      onContextMenu={e => {
+                        if (!canManage) return;
+                        e.preventDefault();
+                        setPermMenu({ type: 'file', id: f.id, name: f.name, position: { x: e.clientX, y: e.clientY } });
+                      }}
+                    >
                       {getFileIcon(f)}
                       <div className="file-info">
                         <div className="file-name">{f.name}</div>
@@ -462,6 +475,18 @@ export default function FileManager() {
           </div>
         </div>
       </div>
+
+      {/* Permissions Menu */}
+      {permMenu && (
+        <PermissionsMenu
+          resourceType={permMenu.type}
+          resourceId={permMenu.id}
+          resourceName={permMenu.name}
+          schoolId={schoolId}
+          position={permMenu.position}
+          onClose={() => setPermMenu(null)}
+        />
+      )}
     </div>
   );
 }

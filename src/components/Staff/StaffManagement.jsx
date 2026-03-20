@@ -8,14 +8,17 @@ import {
   getDocs,
   updateDoc,
   deleteDoc,
-  addDoc,
   doc,
-  setDoc
+  setDoc,
+  arrayUnion,
+  arrayRemove,
+  getDoc
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../../firebase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, updateEmail, deleteUser, signOut as firebaseSignOut } from 'firebase/auth';
+import { secondaryAuth } from '../../firebase';
 import Header from '../Layout/Header';
-import { Plus, Edit3, Trash2, Shield, Eye, Search, X, UserPlus, CheckCircle, XCircle } from 'lucide-react';
+import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User } from 'lucide-react';
+import RolesManager from './RolesManager';
 import '../Gantt/Gantt.css';
 import './Staff.css';
 
@@ -26,30 +29,211 @@ const ROLE_LABELS = {
   viewer: 'צופה'
 };
 
+const AVATAR_STYLES = [
+  { key: 'default', label: 'כחול קלאסי' },
+  { key: 'sunset', label: 'שקיעה' },
+  { key: 'ocean', label: 'אוקיינוס' },
+  { key: 'forest', label: 'יער' },
+  { key: 'royal', label: 'מלכותי' },
+  { key: 'midnight', label: 'חצות' },
+  { key: 'rose', label: 'ורד' },
+  { key: 'amber', label: 'ענבר' },
+  { key: 'slate', label: 'אפור' },
+  { key: 'emerald', label: 'אמרלד' },
+  { key: 'ruby', label: 'רובי' },
+  { key: 'sapphire', label: 'ספיר' },
+];
+
+const DEFAULT_PERMISSIONS = {
+  calendar_view: true,
+  calendar_edit: false,
+  categories_view: true,
+  categories_edit: false,
+  staff_view: true,
+  staff_edit: false,
+  tasks_view: true,
+  tasks_edit: false,
+  tasks_assign: false,
+  teams_view: true,
+  teams_edit: false,
+  files_view: true,
+  files_upload: false,
+  files_delete: false,
+  messages_send: true,
+  messages_delete: false,
+  holidays_view: true,
+  holidays_edit: false,
+  data_mapping_view: true,
+  data_mapping_edit: false,
+  schools_manage: false,
+  settings_edit: false,
+};
+
+const PERMISSION_GROUPS = [
+  {
+    label: 'לוח שנה',
+    permissions: [
+      { key: 'calendar_view', label: 'צפייה בלוח שנה' },
+      { key: 'calendar_edit', label: 'עריכת אירועים' },
+    ]
+  },
+  {
+    label: 'קטגוריות',
+    permissions: [
+      { key: 'categories_view', label: 'צפייה בקטגוריות' },
+      { key: 'categories_edit', label: 'עריכת קטגוריות' },
+    ]
+  },
+  {
+    label: 'סגל וקהילה',
+    permissions: [
+      { key: 'staff_view', label: 'צפייה בסגל' },
+      { key: 'staff_edit', label: 'עריכת סגל והרשאות' },
+    ]
+  },
+  {
+    label: 'משימות',
+    permissions: [
+      { key: 'tasks_view', label: 'צפייה במשימות' },
+      { key: 'tasks_edit', label: 'יצירה ועריכת משימות' },
+      { key: 'tasks_assign', label: 'הקצאת משימות לאחרים' },
+    ]
+  },
+  {
+    label: 'צוותים',
+    permissions: [
+      { key: 'teams_view', label: 'צפייה בצוותים' },
+      { key: 'teams_edit', label: 'ניהול צוותים' },
+    ]
+  },
+  {
+    label: 'קבצים',
+    permissions: [
+      { key: 'files_view', label: 'צפייה בקבצים' },
+      { key: 'files_upload', label: 'העלאת קבצים' },
+      { key: 'files_delete', label: 'מחיקת קבצים' },
+    ]
+  },
+  {
+    label: 'הודעות',
+    permissions: [
+      { key: 'messages_send', label: 'שליחת הודעות' },
+      { key: 'messages_delete', label: 'מחיקת הודעות' },
+    ]
+  },
+  {
+    label: 'חגים וחופשות',
+    permissions: [
+      { key: 'holidays_view', label: 'צפייה בחגים' },
+      { key: 'holidays_edit', label: 'עריכת חגים' },
+    ]
+  },
+  {
+    label: 'מיפוי נתונים',
+    permissions: [
+      { key: 'data_mapping_view', label: 'צפייה במיפוי' },
+      { key: 'data_mapping_edit', label: 'עריכת מיפוי נתונים' },
+    ]
+  },
+  {
+    label: 'הגדרות מערכת',
+    permissions: [
+      { key: 'schools_manage', label: 'ניהול מוסדות' },
+      { key: 'settings_edit', label: 'עריכת הגדרות' },
+    ]
+  },
+];
+
+function getPermissionsForRole(role) {
+  const perms = { ...DEFAULT_PERMISSIONS };
+  if (role === 'global_admin') {
+    for (const key of Object.keys(perms)) perms[key] = true;
+  } else if (role === 'principal') {
+    for (const key of Object.keys(perms)) perms[key] = true;
+    perms.schools_manage = false;
+  } else if (role === 'editor') {
+    perms.calendar_edit = true;
+    perms.tasks_edit = true;
+    perms.tasks_assign = true;
+    perms.teams_edit = true;
+    perms.files_upload = true;
+    perms.messages_send = true;
+    perms.data_mapping_edit = true;
+  }
+  return perms;
+}
+
 export default function StaffManagement() {
   const { userData, selectedSchool, isPrincipal, isGlobalAdmin, approveUser, rejectUser } = useAuth();
   const [staff, setStaff] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
-  const [editingUser, setEditingUser] = useState(null);
-  const [editForm, setEditForm] = useState({ role: '', jobTitle: '' });
   const [viewMode, setViewMode] = useState('table');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterRole, setFilterRole] = useState('');
+  const [filterSchool, setFilterSchool] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Add modal
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '' });
+  const [addForm, setAddForm] = useState({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '', password: '', avatarStyle: 'default' });
   const [addError, setAddError] = useState('');
+
+  // Edit modal
+  const [editUser, setEditUser] = useState(null);
+  const [editForm, setEditForm] = useState({ fullName: '', email: '', phone: '', role: '', jobTitle: '', assignedSchoolId: '', newPassword: '', customRoleIds: [], teamIds: [] });
+  const [editError, setEditError] = useState('');
+  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [schoolsToRemove, setSchoolsToRemove] = useState([]);
+
   const [schools, setSchools] = useState([]);
+  const [permissionsUser, setPermissionsUser] = useState(null);
+  const [permissionsForm, setPermissionsForm] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState({});
+  const [showRolesManager, setShowRolesManager] = useState(false);
+  const [customRoles, setCustomRoles] = useState([]);
+  const [teams, setTeams] = useState([]);
 
   const schoolId = selectedSchool || userData?.schoolId;
-
-  useEffect(() => {
-    if (!schoolId) return;
-    loadStaff();
-    loadPendingUsers();
-  }, [schoolId]);
+  const isAdmin = isGlobalAdmin();
+  const canEdit = isPrincipal() || isAdmin;
+  const canApprove = isPrincipal() || isAdmin;
 
   useEffect(() => {
     loadSchools();
   }, []);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    loadCustomRoles();
+    loadTeams();
+  }, [schoolId]);
+
+  async function loadCustomRoles() {
+    try {
+      const snap = await getDocs(collection(db, `roles_${schoolId}`));
+      setCustomRoles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error('Error loading custom roles:', err);
+    }
+  }
+
+  async function loadTeams() {
+    try {
+      const snap = await getDocs(collection(db, `teams_${schoolId}`));
+      setTeams(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error('Error loading teams:', err);
+    }
+  }
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadAllStaff();
+    } else if (schoolId) {
+      loadStaff();
+      loadPendingUsers();
+    }
+  }, [schoolId]);
 
   async function loadSchools() {
     try {
@@ -60,20 +244,29 @@ export default function StaffManagement() {
     }
   }
 
+  // Admin: load ALL users across all schools
+  async function loadAllStaff() {
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setStaff(all);
+    } catch (err) {
+      console.error('Error loading all staff:', err);
+    }
+  }
+
+  // Principal: load only current school's users
   async function loadStaff() {
-    // Query with new schoolIds array-contains
     const q1 = query(collection(db, 'users'), where('schoolIds', 'array-contains', schoolId));
     const snap1 = await getDocs(q1);
     const staffMap = new Map();
     snap1.docs.forEach(d => staffMap.set(d.id, { id: d.id, ...d.data() }));
 
-    // Fallback: also query with old schoolId field for backward compatibility
     const q2 = query(collection(db, 'users'), where('schoolId', '==', schoolId));
     const snap2 = await getDocs(q2);
     snap2.docs.forEach(d => {
       if (!staffMap.has(d.id)) {
         const data = d.data();
-        // Only include if not in pendingSchools for this school (i.e., actually approved via old schema)
         const pending = data.pendingSchools || [];
         if (!pending.includes(schoolId)) {
           staffMap.set(d.id, { id: d.id, ...data });
@@ -92,48 +285,182 @@ export default function StaffManagement() {
 
   async function handleApprove(userId) {
     await approveUser(userId, schoolId);
-    loadStaff();
-    loadPendingUsers();
+    isAdmin ? loadAllStaff() : loadStaff();
+    if (!isAdmin) loadPendingUsers();
   }
 
   async function handleReject(userId) {
     if (!confirm('האם לדחות את בקשת המשתמש?')) return;
     await rejectUser(userId, schoolId);
-    loadPendingUsers();
+    if (!isAdmin) loadPendingUsers();
   }
 
-  async function handleUpdateRole(userId) {
-    await updateDoc(doc(db, 'users', userId), {
+  async function handleSaveEdit() {
+    if (!editUser) return;
+    setEditError('');
+
+    if (!editForm.fullName.trim()) {
+      setEditError('שם מלא הוא שדה חובה');
+      return;
+    }
+    if (!editForm.email.trim()) {
+      setEditError('דוא"ל הוא שדה חובה');
+      return;
+    }
+    if (editForm.newPassword && editForm.newPassword.length < 6) {
+      setEditError('הסיסמא חייבת להכיל לפחות 6 תווים');
+      return;
+    }
+
+    const updateData = {
+      fullName: editForm.fullName.trim(),
+      email: editForm.email.trim(),
+      phone: editForm.phone.trim(),
       role: editForm.role,
-      jobTitle: editForm.jobTitle
-    });
-    setEditingUser(null);
-    loadStaff();
+      jobTitle: editForm.jobTitle,
+      customRoleIds: editForm.customRoleIds || [],
+      teamIds: editForm.teamIds || [],
+    };
+    if (editForm.assignedSchoolId) {
+      updateData.schoolIds = arrayUnion(editForm.assignedSchoolId);
+    }
+
+    // Sync email/password changes directly to Firebase Auth
+    const emailChanged = editForm.email.trim() !== (editUser.email || '');
+    const passwordChanged = !!editForm.newPassword;
+    if (emailChanged || passwordChanged) {
+      const currentPassword = editUser._authPassword || editUser._pendingPassword;
+      if (currentPassword && editUser.email) {
+        try {
+          const cred = await signInWithEmailAndPassword(secondaryAuth, editUser.email, currentPassword);
+          if (passwordChanged) {
+            await updatePassword(cred.user, editForm.newPassword);
+            updateData._authPassword = editForm.newPassword;
+          }
+          if (emailChanged) {
+            await updateEmail(cred.user, editForm.email.trim());
+          }
+          await firebaseSignOut(secondaryAuth);
+        } catch (authErr) {
+          console.warn('Could not update Firebase Auth:', authErr);
+          // Fallback to _pendingPassword for password changes
+          if (passwordChanged) {
+            updateData._pendingPassword = editForm.newPassword;
+          }
+        }
+      } else if (passwordChanged) {
+        // No stored password, fallback to _pendingPassword
+        updateData._pendingPassword = editForm.newPassword;
+      }
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', editUser.id), updateData);
+      // Remove schools one by one
+      for (const sid of schoolsToRemove) {
+        await updateDoc(doc(db, 'users', editUser.id), {
+          schoolIds: arrayRemove(sid)
+        });
+      }
+      if (editForm.newPassword) {
+        setPasswordSaved(true);
+      }
+      setEditUser(null);
+      isAdmin ? loadAllStaff() : loadStaff();
+    } catch (err) {
+      setEditError('שגיאה בשמירה: ' + err.message);
+    }
   }
 
   async function handleDelete(userId) {
     if (!confirm('האם להסיר משתמש זה?')) return;
-    await deleteDoc(doc(db, 'users', userId));
-    loadStaff();
+    try {
+      // Try to delete from Firebase Auth using stored password
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      const data = userDoc.data();
+      const password = data?._authPassword || data?._pendingPassword;
+      if (password && data?.email) {
+        try {
+          const cred = await signInWithEmailAndPassword(secondaryAuth, data.email, password);
+          await deleteUser(cred.user);
+        } catch (authErr) {
+          console.warn('Could not delete from Firebase Auth:', authErr);
+        }
+      }
+      await deleteDoc(doc(db, 'users', userId));
+    } catch (err) {
+      console.error('Error deleting user:', err);
+    }
+    isAdmin ? loadAllStaff() : loadStaff();
   }
 
-  function startEdit(user) {
-    setEditingUser(user.id);
-    setEditForm({ role: user.role, jobTitle: user.jobTitle || '' });
+  function openEdit(user) {
+    setEditUser(user);
+    setEditForm({
+      fullName: user.fullName || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      role: user.role,
+      jobTitle: user.jobTitle || '',
+      assignedSchoolId: '',
+      newPassword: '',
+      customRoleIds: user.customRoleIds || [],
+      teamIds: user.teamIds || [],
+    });
+    setSchoolsToRemove([]);
+    setEditError('');
+    setPasswordSaved(false);
+  }
+
+  async function openPermissions(user) {
+    setPermissionsUser(user);
+    try {
+      const permDoc = await getDoc(doc(db, 'users', user.id));
+      const data = permDoc.data();
+      if (data?.permissions) {
+        setPermissionsForm({ ...getPermissionsForRole(user.role), ...data.permissions });
+      } else {
+        setPermissionsForm(getPermissionsForRole(user.role));
+      }
+    } catch {
+      setPermissionsForm(getPermissionsForRole(user.role));
+    }
+    const expanded = {};
+    PERMISSION_GROUPS.forEach(g => { expanded[g.label] = true; });
+    setExpandedGroups(expanded);
+  }
+
+  async function savePermissions() {
+    if (!permissionsUser) return;
+    try {
+      await updateDoc(doc(db, 'users', permissionsUser.id), { permissions: permissionsForm });
+      setPermissionsUser(null);
+    } catch (err) {
+      alert('שגיאה בשמירת ההרשאות: ' + err.message);
+    }
+  }
+
+  function togglePermission(key) {
+    setPermissionsForm(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function toggleGroup(label) {
+    setExpandedGroups(prev => ({ ...prev, [label]: !prev[label] }));
   }
 
   async function handleAddStaff(e) {
     e.preventDefault();
     if (!addForm.fullName.trim() || !addForm.email.trim()) return;
+    if (!addForm.password || addForm.password.length < 6) {
+      setAddError('הסיסמא חייבת להכיל לפחות 6 תווים');
+      return;
+    }
     setAddError('');
-
     const targetSchoolId = addForm.schoolId || schoolId;
 
     try {
-      // Create a temporary password - user should reset
-      const tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
-      const cred = await createUserWithEmailAndPassword(auth, addForm.email, tempPassword);
-
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, addForm.email, addForm.password);
+      await firebaseSignOut(secondaryAuth);
       await setDoc(doc(db, 'users', cred.user.uid), {
         uid: cred.user.uid,
         email: addForm.email,
@@ -143,14 +470,17 @@ export default function StaffManagement() {
         schoolId: targetSchoolId,
         schoolIds: [targetSchoolId],
         pendingSchools: [],
+        permissions: getPermissionsForRole(addForm.role),
+        avatarStyle: addForm.avatarStyle || 'default',
         phone: '',
         avatar: '',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        _authPassword: addForm.password
       });
 
       setShowAddModal(false);
-      setAddForm({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '' });
-      loadStaff();
+      setAddForm({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '', password: '', avatarStyle: 'default' });
+      isAdmin ? loadAllStaff() : loadStaff();
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
         setAddError('כתובת הדוא"ל כבר קיימת במערכת');
@@ -160,21 +490,45 @@ export default function StaffManagement() {
     }
   }
 
-  const canEdit = isPrincipal() || isGlobalAdmin();
-  const isAdmin = isGlobalAdmin();
-  const canApprove = isPrincipal() || isGlobalAdmin();
+  // Get school names for a user
+  function getUserSchoolNames(user) {
+    const ids = user.schoolIds || (user.schoolId ? [user.schoolId] : []);
+    return ids
+      .map(sid => schools.find(s => s.id === sid)?.name || sid)
+      .filter(Boolean);
+  }
 
-  // Filter staff based on search
+  // Can the logged-in user edit this staff member?
+  function canEditUser(user) {
+    if (isAdmin) return true;
+    if (!isPrincipal()) return false;
+    // Principal can edit only viewer/editor in their own school (not other principals/admins)
+    const userSchoolIds = user.schoolIds || (user.schoolId ? [user.schoolId] : []);
+    const inMySchool = userSchoolIds.includes(schoolId);
+    const isHigherRole = user.role === 'principal' || user.role === 'global_admin';
+    return inMySchool && !isHigherRole;
+  }
+
+  // Filtered staff
   const filteredStaff = staff.filter(user => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      (user.fullName || '').toLowerCase().includes(q) ||
-      (user.email || '').toLowerCase().includes(q) ||
-      (user.jobTitle || '').toLowerCase().includes(q) ||
-      (ROLE_LABELS[user.role] || '').includes(q)
-    );
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const match =
+        (user.fullName || '').toLowerCase().includes(q) ||
+        (user.email || '').toLowerCase().includes(q) ||
+        (user.jobTitle || '').toLowerCase().includes(q) ||
+        (ROLE_LABELS[user.role] || '').includes(q);
+      if (!match) return false;
+    }
+    if (filterRole && user.role !== filterRole) return false;
+    if (filterSchool) {
+      const ids = user.schoolIds || (user.schoolId ? [user.schoolId] : []);
+      if (!ids.includes(filterSchool)) return false;
+    }
+    return true;
   });
+
+  const activeFilters = (filterRole ? 1 : 0) + (filterSchool ? 1 : 0);
 
   return (
     <div className="page">
@@ -183,24 +537,24 @@ export default function StaffManagement() {
         <div className="page-toolbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <div className="view-toggle">
-              <button
-                className={`toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
-                onClick={() => setViewMode('table')}
-              >
+              <button className={`toggle-btn ${viewMode === 'table' ? 'active' : ''}`} onClick={() => setViewMode('table')}>
                 טבלה
               </button>
-              <button
-                className={`toggle-btn ${viewMode === 'grid' ? 'active' : ''}`}
-                onClick={() => setViewMode('grid')}
-              >
+              <button className={`toggle-btn ${viewMode === 'grid' ? 'active' : ''}`} onClick={() => setViewMode('grid')}>
                 כרטיסיות
               </button>
             </div>
-            {isAdmin && (
-              <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-                <UserPlus size={16} />
-                הוספת איש צוות
-              </button>
+            {canEdit && (
+              <>
+                <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+                  <UserPlus size={16} />
+                  הוספת איש צוות
+                </button>
+                <button className="btn btn-secondary" onClick={() => setShowRolesManager(true)}>
+                  <Shield size={16} />
+                  ניהול תפקידים
+                </button>
+              </>
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -212,11 +566,51 @@ export default function StaffManagement() {
                 placeholder="חיפוש צוות..."
               />
             </div>
+            <button
+              className={`btn btn-secondary btn-sm staff-filter-btn ${activeFilters > 0 ? 'staff-filter-btn--active' : ''}`}
+              onClick={() => setShowFilters(f => !f)}
+            >
+              <Filter size={14} />
+              סינון
+              {activeFilters > 0 && <span className="filter-badge">{activeFilters}</span>}
+            </button>
             <span className="staff-count">{filteredStaff.length} אנשי צוות</span>
           </div>
         </div>
 
-        {/* Pending Approval Section */}
+        {/* Filter bar */}
+        {showFilters && (
+          <div className="staff-filters-bar">
+            <div className="staff-filter-group">
+              <label>תפקיד</label>
+              <select value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+                <option value="">הכל</option>
+                {Object.entries(ROLE_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </div>
+            {isAdmin && (
+              <div className="staff-filter-group">
+                <label>מסגרת</label>
+                <select value={filterSchool} onChange={e => setFilterSchool(e.target.value)}>
+                  <option value="">הכל</option>
+                  {schools.map(s => (
+                    <option key={s.id} value={s.id}>{s.name || s.id}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {activeFilters > 0 && (
+              <button className="btn btn-secondary btn-sm" onClick={() => { setFilterRole(''); setFilterSchool(''); }}>
+                <X size={13} />
+                נקה סינון
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Pending Approvals */}
         {canApprove && pendingUsers.length > 0 && (
           <div className="pending-approval-section" style={{ marginBottom: '1.5rem', padding: '1rem', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 8 }}>
             <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', color: '#92400e' }}>
@@ -245,23 +639,11 @@ export default function StaffManagement() {
                       <td dir="ltr">{user.email}</td>
                       <td>
                         <div className="td-actions" style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => handleApprove(user.id)}
-                            title="אישור"
-                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                          >
-                            <CheckCircle size={14} />
-                            אישור
+                          <button className="btn btn-primary btn-sm" onClick={() => handleApprove(user.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <CheckCircle size={14} /> אישור
                           </button>
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => handleReject(user.id)}
-                            title="דחייה"
-                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#ef4444' }}
-                          >
-                            <XCircle size={14} />
-                            דחייה
+                          <button className="btn btn-secondary btn-sm" onClick={() => handleReject(user.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#ef4444' }}>
+                            <XCircle size={14} /> דחייה
                           </button>
                         </div>
                       </td>
@@ -273,31 +655,57 @@ export default function StaffManagement() {
           </div>
         )}
 
+        {/* Staff Grid */}
         {viewMode === 'grid' ? (
           <div className="staff-grid">
-            {filteredStaff.map(user => (
-              <div key={user.id} className="staff-card">
-                <div className="staff-card-avatar">
-                  {user.fullName?.charAt(0) || '?'}
+            {filteredStaff.map(user => {
+              const schoolNames = getUserSchoolNames(user);
+              return (
+                <div key={user.id} className="staff-card">
+                  <div className="staff-card-avatar">{user.fullName?.charAt(0) || '?'}</div>
+                  <h4 className="staff-card-name">{user.fullName}</h4>
+                  <p className="staff-card-title">{user.jobTitle || '—'}</p>
+                  <span className={`role-badge role-${user.role}`}>{ROLE_LABELS[user.role] || 'צופה'}</span>
+                  {/* Custom roles */}
+                  {user.customRoleIds && user.customRoleIds.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', justifyContent: 'center', marginTop: '0.3rem' }}>
+                      {user.customRoleIds.map(rid => {
+                        const r = customRoles.find(cr => cr.id === rid);
+                        return r ? <span key={rid} style={{ fontSize: '0.68rem', background: '#ede9fe', color: '#6d28d9', padding: '0.1rem 0.4rem', borderRadius: 4 }}>{r.name}</span> : null;
+                      })}
+                    </div>
+                  )}
+                  {/* Teams */}
+                  {user.teamIds && user.teamIds.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', justifyContent: 'center', marginTop: '0.3rem' }}>
+                      {user.teamIds.map(tid => {
+                        const t = teams.find(tm => tm.id === tid);
+                        return t ? <span key={tid} style={{ fontSize: '0.68rem', background: '#ecfdf5', color: '#065f46', padding: '0.1rem 0.4rem', borderRadius: 4 }}>{t.name}</span> : null;
+                      })}
+                    </div>
+                  )}
+                  {schoolNames.length > 0 && (
+                    <p className="staff-card-school">{schoolNames.join(' • ')}</p>
+                  )}
+                  <p className="staff-card-email">{user.email}</p>
+                  {canEditUser(user) && (
+                    <div className="staff-card-actions">
+                      <button className="icon-btn" onClick={() => openPermissions(user)} title="הרשאות מפורטות">
+                        <Shield size={14} />
+                      </button>
+                      <button className="icon-btn" onClick={() => openEdit(user)} title="עריכה">
+                        <Edit3 size={14} />
+                      </button>
+                      {isAdmin && (
+                        <button className="icon-btn icon-btn--danger" onClick={() => handleDelete(user.id)}>
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <h4 className="staff-card-name">{user.fullName}</h4>
-                <p className="staff-card-title">{user.jobTitle || '—'}</p>
-                <span className={`role-badge role-${user.role}`}>
-                  {ROLE_LABELS[user.role] || 'צופה'}
-                </span>
-                <p className="staff-card-email">{user.email}</p>
-                {canEdit && (
-                  <div className="staff-card-actions">
-                    <button className="icon-btn" onClick={() => startEdit(user)}>
-                      <Shield size={14} />
-                    </button>
-                    <button className="icon-btn icon-btn--danger" onClick={() => handleDelete(user.id)}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="data-table-wrap">
@@ -307,72 +715,279 @@ export default function StaffManagement() {
                   <th>שם</th>
                   <th>תפקיד</th>
                   <th>דוא"ל</th>
+                  <th>מסגרת</th>
                   <th>הרשאה</th>
                   {canEdit && <th>פעולות</th>}
                 </tr>
               </thead>
               <tbody>
-                {filteredStaff.map(user => (
-                  <tr key={user.id}>
-                    <td className="td-bold">
-                      <div className="td-user">
-                        <div className="td-avatar">{user.fullName?.charAt(0)}</div>
-                        {user.fullName}
-                      </div>
-                    </td>
-                    <td>{user.jobTitle || '—'}</td>
-                    <td dir="ltr">{user.email}</td>
-                    <td>
-                      {editingUser === user.id ? (
-                        <div className="inline-edit">
-                          <select
-                            value={editForm.role}
-                            onChange={e => setEditForm(prev => ({ ...prev, role: e.target.value }))}
-                          >
-                            <option value="viewer">צופה</option>
-                            <option value="editor">עורך</option>
-                            {isAdmin && <option value="principal">מנהל מוסד</option>}
-                          </select>
-                          <input
-                            value={editForm.jobTitle}
-                            onChange={e => setEditForm(prev => ({ ...prev, jobTitle: e.target.value }))}
-                            placeholder="תפקיד"
-                            style={{ padding: '0.3rem 0.5rem', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: '0.78rem', fontFamily: 'Inter, sans-serif', maxWidth: 120 }}
-                          />
-                          <button className="btn btn-primary btn-sm" onClick={() => handleUpdateRole(user.id)}>
-                            שמירה
-                          </button>
-                          <button className="btn btn-secondary btn-sm" onClick={() => setEditingUser(null)}>
-                            ביטול
-                          </button>
+                {filteredStaff.map(user => {
+                  const schoolNames = getUserSchoolNames(user);
+                  return (
+                    <tr key={user.id}>
+                      <td className="td-bold">
+                        <div className="td-user">
+                          <div className="td-avatar">{user.fullName?.charAt(0)}</div>
+                          {user.fullName}
                         </div>
-                      ) : (
+                      </td>
+                      <td>{user.jobTitle || '—'}</td>
+                      <td dir="ltr">{user.email}</td>
+                      <td>
+                        <div className="td-schools">
+                          {schoolNames.length > 0
+                            ? schoolNames.map((name, i) => (
+                              <span key={i} className="school-tag">{name}</span>
+                            ))
+                            : <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>—</span>
+                          }
+                        </div>
+                      </td>
+                      <td>
                         <span className={`role-badge role-${user.role}`}>
                           {ROLE_LABELS[user.role] || 'צופה'}
                         </span>
-                      )}
-                    </td>
-                    {canEdit && (
-                      <td>
-                        <div className="td-actions">
-                          <button className="icon-btn" title="הרשאות" onClick={() => startEdit(user)}>
-                            <Shield size={15} />
-                          </button>
-                          <button className="icon-btn icon-btn--danger" title="הסרה" onClick={() => handleDelete(user.id)}>
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      {canEdit && (
+                        <td>
+                          <div className="td-actions">
+                            {canEditUser(user) ? (
+                              <>
+                                <button className="icon-btn" title="הרשאות מפורטות" onClick={() => openPermissions(user)}>
+                                  <Shield size={15} />
+                                </button>
+                                <button className="icon-btn" title="עריכה" onClick={() => openEdit(user)}>
+                                  <Edit3 size={15} />
+                                </button>
+                                {isAdmin && (
+                                  <button className="icon-btn icon-btn--danger" title="הסרה" onClick={() => handleDelete(user.id)}>
+                                    <Trash2 size={15} />
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>—</span>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
                 {filteredStaff.length === 0 && (
-                  <tr><td colSpan={canEdit ? 5 : 4} className="td-empty">
-                    {searchQuery ? 'לא נמצאו תוצאות' : 'אין אנשי צוות רשומים'}
-                  </td></tr>
+                  <tr>
+                    <td colSpan={canEdit ? 6 : 5} className="td-empty">
+                      {searchQuery || filterRole || filterSchool ? 'לא נמצאו תוצאות' : 'אין אנשי צוות רשומים'}
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Edit Staff Modal */}
+        {editUser && (
+          <div className="modal-overlay" onClick={() => setEditUser(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>עריכת איש צוות — {editUser.fullName}</h3>
+                <button className="modal-close" onClick={() => setEditUser(null)}><X size={18} /></button>
+              </div>
+              <div className="modal-form">
+                <div className="add-staff-form">
+                  <div className="form-group">
+                    <label>
+                      <User size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                      שם מלא
+                    </label>
+                    <input
+                      value={editForm.fullName}
+                      onChange={e => setEditForm(prev => ({ ...prev, fullName: e.target.value }))}
+                      placeholder="שם פרטי ומשפחה"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>
+                      <Mail size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                      דוא"ל
+                    </label>
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={e => setEditForm(prev => ({ ...prev, email: e.target.value }))}
+                      placeholder="email@example.com"
+                      dir="ltr"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>
+                      <Phone size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                      טלפון
+                    </label>
+                    <input
+                      value={editForm.phone}
+                      onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                      placeholder="מספר טלפון"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>תפקיד</label>
+                    <input
+                      value={editForm.jobTitle}
+                      onChange={e => setEditForm(prev => ({ ...prev, jobTitle: e.target.value }))}
+                      placeholder="תפקיד"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>הרשאה</label>
+                    <select
+                      value={editForm.role}
+                      onChange={e => setEditForm(prev => ({ ...prev, role: e.target.value }))}
+                    >
+                      <option value="viewer">צופה</option>
+                      <option value="editor">עורך</option>
+                      {isAdmin && <option value="principal">מנהל מוסד</option>}
+                      {isAdmin && <option value="global_admin">מנהל על</option>}
+                    </select>
+                  </div>
+
+                  {/* Current Schools with removal */}
+                  {(() => {
+                    const userSchoolIds = (editUser.schoolIds || (editUser.schoolId ? [editUser.schoolId] : [])).filter(sid => !schoolsToRemove.includes(sid));
+                    return userSchoolIds.length > 0 && (
+                      <div className="form-group">
+                        <label>מסגרות נוכחיות</label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          {userSchoolIds.map(sid => {
+                            const schoolName = schools.find(s => s.id === sid)?.name || sid;
+                            return (
+                              <span key={sid} className="school-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.5rem' }}>
+                                {schoolName}
+                                {(isAdmin || (isPrincipal() && sid === schoolId)) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSchoolsToRemove(prev => [...prev, sid])}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: '#ef4444' }}
+                                    title="הסר מסגרת"
+                                  >
+                                    <XCircle size={13} />
+                                  </button>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {schoolsToRemove.length > 0 && (
+                          <span style={{ fontSize: '0.7rem', color: '#f59e0b' }}>
+                            {schoolsToRemove.length} מסגרות יוסרו בשמירה
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {isAdmin && (
+                    <div className="form-group">
+                      <label>שיוך למסגרת נוספת</label>
+                      <select
+                        value={editForm.assignedSchoolId}
+                        onChange={e => setEditForm(prev => ({ ...prev, assignedSchoolId: e.target.value }))}
+                      >
+                        <option value="">ללא שינוי</option>
+                        {schools.map(s => (
+                          <option key={s.id} value={s.id}>{s.name || s.id}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Custom Roles */}
+                  {customRoles.length > 0 && (
+                    <div className="form-group">
+                      <label>
+                        <Shield size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                        תפקידים מותאמים
+                      </label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                        {customRoles.map(role => (
+                          <label key={role.id} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.6rem', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: '0.8rem', cursor: 'pointer', background: editForm.customRoleIds.includes(role.id) ? '#eff6ff' : '#fff' }}>
+                            <input
+                              type="checkbox"
+                              checked={editForm.customRoleIds.includes(role.id)}
+                              onChange={() => setEditForm(prev => ({
+                                ...prev,
+                                customRoleIds: prev.customRoleIds.includes(role.id)
+                                  ? prev.customRoleIds.filter(id => id !== role.id)
+                                  : [...prev.customRoleIds, role.id]
+                              }))}
+                            />
+                            {role.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Teams */}
+                  {teams.length > 0 && (
+                    <div className="form-group">
+                      <label>צוותים</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                        {teams.map(team => (
+                          <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.6rem', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: '0.8rem', cursor: 'pointer', background: editForm.teamIds.includes(team.id) ? '#eff6ff' : '#fff' }}>
+                            <input
+                              type="checkbox"
+                              checked={editForm.teamIds.includes(team.id)}
+                              onChange={() => setEditForm(prev => ({
+                                ...prev,
+                                teamIds: prev.teamIds.includes(team.id)
+                                  ? prev.teamIds.filter(id => id !== team.id)
+                                  : [...prev.teamIds, team.id]
+                              }))}
+                            />
+                            {team.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Password Change Section */}
+                  <div className="form-group">
+                    <label>
+                      <Lock size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                      קביעת סיסמא חדשה
+                    </label>
+                    <input
+                      type="password"
+                      value={editForm.newPassword}
+                      onChange={e => setEditForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                      placeholder="סיסמא חדשה (לפחות 6 תווים)"
+                      dir="ltr"
+                      minLength={6}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                      הסיסמא תיכנס לתוקף בכניסה הבאה של המשתמש למערכת. השאירו ריק אם אין צורך בשינוי.
+                    </span>
+                  </div>
+
+                  {editError && (
+                    <div style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 500 }}>{editError}</div>
+                  )}
+                  <div className="modal-actions">
+                    <button className="btn btn-primary" onClick={handleSaveEdit}>
+                      <Save size={15} />
+                      שמירה
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => setEditUser(null)}>ביטול</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -407,6 +1022,24 @@ export default function StaffManagement() {
                     />
                   </div>
                   <div className="form-group">
+                    <label>
+                      <Lock size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                      סיסמא
+                    </label>
+                    <input
+                      type="password"
+                      value={addForm.password}
+                      onChange={e => setAddForm(prev => ({ ...prev, password: e.target.value }))}
+                      placeholder="סיסמא (לפחות 6 תווים)"
+                      dir="ltr"
+                      required
+                      minLength={6}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                      הסיסמא תשמש את איש הצוות להתחברות למערכת
+                    </span>
+                  </div>
+                  <div className="form-group">
                     <label>תפקיד</label>
                     <input
                       value={addForm.jobTitle}
@@ -415,7 +1048,7 @@ export default function StaffManagement() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>מוסד</label>
+                    <label>מסגרת</label>
                     <select
                       value={addForm.schoolId}
                       onChange={e => setAddForm(prev => ({ ...prev, schoolId: e.target.value }))}
@@ -437,10 +1070,24 @@ export default function StaffManagement() {
                       {isAdmin && <option value="principal">מנהל מוסד</option>}
                     </select>
                   </div>
-                  {addError && (
-                    <div style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 500 }}>
-                      {addError}
+                  <div className="form-group">
+                    <label>סגנון אוואטר</label>
+                    <div className="avatar-style-picker">
+                      {AVATAR_STYLES.map(s => (
+                        <button
+                          key={s.key}
+                          type="button"
+                          className={`avatar-style-option avatar-style--${s.key} ${addForm.avatarStyle === s.key ? 'avatar-style-option--active' : ''}`}
+                          onClick={() => setAddForm(prev => ({ ...prev, avatarStyle: s.key }))}
+                          title={s.label}
+                        >
+                          {addForm.fullName?.charAt(0) || '?'}
+                        </button>
+                      ))}
                     </div>
+                  </div>
+                  {addError && (
+                    <div style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 500 }}>{addError}</div>
                   )}
                   <div className="modal-actions">
                     <button type="submit" className="btn btn-primary">הוספה</button>
@@ -450,6 +1097,91 @@ export default function StaffManagement() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Detailed Permissions Modal */}
+        {permissionsUser && (
+          <div className="modal-overlay" onClick={() => setPermissionsUser(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
+              <div className="modal-header">
+                <h3>הרשאות — {permissionsUser.fullName}</h3>
+                <button className="modal-close" onClick={() => setPermissionsUser(null)}><X size={18} /></button>
+              </div>
+              <div style={{ padding: '0.75rem 1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>תפקיד מערכת:</span>
+                  <span className={`role-badge role-${permissionsUser.role}`}>
+                    {ROLE_LABELS[permissionsUser.role] || 'צופה'}
+                  </span>
+                </div>
+                {/* Custom roles */}
+                {permissionsUser.customRoleIds && permissionsUser.customRoleIds.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>תפקידים מותאמים:</span>
+                    {permissionsUser.customRoleIds.map(rid => {
+                      const r = customRoles.find(cr => cr.id === rid);
+                      return r ? <span key={rid} style={{ fontSize: '0.72rem', background: '#ede9fe', color: '#6d28d9', padding: '0.15rem 0.4rem', borderRadius: 4 }}>{r.name}</span> : null;
+                    })}
+                  </div>
+                )}
+                {/* Teams */}
+                {permissionsUser.teamIds && permissionsUser.teamIds.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>צוותים:</span>
+                    {permissionsUser.teamIds.map(tid => {
+                      const t = teams.find(tm => tm.id === tid);
+                      return t ? <span key={tid} style={{ fontSize: '0.72rem', background: '#ecfdf5', color: '#065f46', padding: '0.15rem 0.4rem', borderRadius: 4 }}>{t.name}</span> : null;
+                    })}
+                  </div>
+                )}
+                <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '0 0 1rem' }}>
+                  ניתן להתאים את ההרשאות לכל משתמש בנפרד. הרשאות מתפקידים מותאמים יתווספו אוטומטית.
+                </p>
+              </div>
+              <div className="permissions-list">
+                {PERMISSION_GROUPS.map(group => (
+                  <div key={group.label} className="permissions-group">
+                    <button className="permissions-group-header" onClick={() => toggleGroup(group.label)}>
+                      <span className="permissions-group-title">{group.label}</span>
+                      <span className="permissions-group-summary">
+                        {group.permissions.filter(p => permissionsForm[p.key]).length}/{group.permissions.length}
+                      </span>
+                      {expandedGroups[group.label] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    {expandedGroups[group.label] && (
+                      <div className="permissions-group-items">
+                        {group.permissions.map(perm => (
+                          <label key={perm.key} className="permissions-item">
+                            <input
+                              type="checkbox"
+                              checked={!!permissionsForm[perm.key]}
+                              onChange={() => togglePermission(perm.key)}
+                            />
+                            <span>{perm.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="modal-actions" style={{ padding: '1rem 1.5rem' }}>
+                <button className="btn btn-primary" onClick={savePermissions}>
+                  <Save size={16} />
+                  שמירת הרשאות
+                </button>
+                <button className="btn btn-secondary" onClick={() => setPermissionsUser(null)}>ביטול</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Roles Manager Modal */}
+        {showRolesManager && (
+          <RolesManager
+            schoolId={schoolId}
+            onClose={() => { setShowRolesManager(false); loadCustomRoles(); }}
+          />
         )}
       </div>
     </div>

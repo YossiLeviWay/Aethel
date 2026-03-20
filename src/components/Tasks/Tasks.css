@@ -398,6 +398,43 @@
   color: #fff;
 }
 
+/* ===== Task Edit Modal ===== */
+.task-edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 1rem;
+}
+
+.task-edit-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  width: 100%;
+  max-width: 540px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+.task-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.task-edit-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
 @media (max-width: 480px) {
   .task-row {
     padding: 0.5rem;
@@ -409,5 +446,9 @@
 
   .task-status-select {
     font-size: 0.7rem;
+  }
+
+  .task-edit-modal {
+    max-width: 100%;
   }
 }

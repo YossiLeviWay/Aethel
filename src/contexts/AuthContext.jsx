@@ -4,7 +4,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  updatePassword
 } from 'firebase/auth';
 import {
   doc,
@@ -54,7 +55,19 @@ export function AuthProvider({ children }) {
   }
 
   async function login(email, password) {
-    return signInWithEmailAndPassword(auth, email, password);
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    // Check if admin set a new password for this user
+    try {
+      const userDoc = await getDoc(doc(db, 'users', cred.user.uid));
+      const data = userDoc.data();
+      if (data?._pendingPassword) {
+        await updatePassword(cred.user, data._pendingPassword);
+        await updateDoc(doc(db, 'users', cred.user.uid), { _pendingPassword: '', _authPassword: data._pendingPassword });
+      }
+    } catch (err) {
+      console.warn('Could not apply pending password:', err);
+    }
+    return cred;
   }
 
   async function loginAsAdmin(password) {
@@ -136,6 +149,18 @@ export function AuthProvider({ children }) {
     return userData?.role === 'editor';
   }
 
+  function isPending() {
+    if (!userData) return false;
+    if (userData.role === 'global_admin') return false;
+    const hasApprovedSchools = (userData.schoolIds && userData.schoolIds.length > 0) || userData.schoolId;
+    const hasPending = userData.pendingSchools && userData.pendingSchools.length > 0;
+    return !hasApprovedSchools && hasPending;
+  }
+
+  function isViewer() {
+    return userData?.role === 'viewer';
+  }
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -164,7 +189,9 @@ export function AuthProvider({ children }) {
     isEditor,
     fetchUserData,
     approveUser,
-    rejectUser
+    rejectUser,
+    isPending,
+    isViewer
   };
 
   return (
