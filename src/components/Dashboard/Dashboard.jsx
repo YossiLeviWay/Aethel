@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import Header from '../Layout/Header';
-import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck, Activity, School, UserPlus, Shield } from 'lucide-react';
+import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck, Activity, School, UserPlus, Shield, Megaphone } from 'lucide-react';
 import './Dashboard.css';
 
 function getGreeting() {
@@ -74,7 +74,7 @@ const HOLIDAY_BORDER_COLORS = {
 };
 
 export default function Dashboard() {
-  const { userData, selectedSchool, isGlobalAdmin, isPrincipal, approveUser, rejectUser } = useAuth();
+  const { userData, selectedSchool, isGlobalAdmin, isPrincipal, isPending, approveUser, rejectUser } = useAuth();
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [taskStats, setTaskStats] = useState({ total: 0, pending: 0, completed: 0, overdue: 0 });
@@ -88,6 +88,8 @@ export default function Dashboard() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [schoolStats, setSchoolStats] = useState([]);
   const [allSchoolEvents, setAllSchoolEvents] = useState([]);
+  const [recentAnnouncements, setRecentAnnouncements] = useState([]);
+  const [announcementTeams, setAnnouncementTeams] = useState([]);
 
   useEffect(() => {
     if (!selectedSchool) return;
@@ -125,6 +127,41 @@ export default function Dashboard() {
     }
     loadSchools();
   }, []);
+
+  // Load recent announcements for dashboard
+  useEffect(() => {
+    if (!selectedSchool) return;
+    const q = query(
+      collection(db, 'announcements'),
+      orderBy('createdAt', 'desc'),
+      limit(3)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      let anns = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Filter: show announcements for target='all' or matching schoolId
+      if (!isGlobalAdmin()) {
+        anns = anns.filter(a => a.target === 'all' || a.schoolId === selectedSchool);
+      }
+      setRecentAnnouncements(anns.slice(0, 3));
+    }, (err) => {
+      console.error('Error loading announcements for dashboard:', err);
+    });
+    return unsub;
+  }, [selectedSchool]);
+
+  // Load teams for resolving team names in announcements
+  useEffect(() => {
+    if (!selectedSchool) return;
+    async function loadTeams() {
+      try {
+        const snap = await getDocs(collection(db, `teams_${selectedSchool}`));
+        setAnnouncementTeams(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.error('Error loading teams for dashboard:', err);
+      }
+    }
+    loadTeams();
+  }, [selectedSchool]);
 
   // Fetch pending users for admin/principal
   useEffect(() => {
@@ -391,6 +428,23 @@ export default function Dashboard() {
     });
   }
 
+  if (isPending()) {
+    return (
+      <div className="page">
+        <Header title="דשבורד" />
+        <div className="page-content">
+          <div className="dashboard-empty" style={{ textAlign: 'center' }}>
+            <Clock size={48} style={{ color: '#f59e0b' }} />
+            <h2 style={{ margin: '1rem 0 0.5rem', fontSize: '1.3rem', color: '#92400e' }}>ממתין לאישור</h2>
+            <p style={{ color: '#78716c', fontSize: '0.95rem', maxWidth: 400, margin: '0 auto' }}>
+              הבקשה שלך להצטרף למוסד נשלחה למנהל. תקבל גישה למערכת לאחר שהמנהל יאשר את הבקשה.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!selectedSchool) {
     return (
       <div className="page">
@@ -584,6 +638,54 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Recent Announcements */}
+        {recentAnnouncements.length > 0 && (
+          <div className="dashboard-section" style={{ marginBottom: '1rem' }}>
+            <div className="section-header">
+              <Megaphone size={18} />
+              <h2 className="section-title">הודעות אחרונות</h2>
+            </div>
+            <div className="section-body">
+              <div className="announcement-list-dashboard">
+                {recentAnnouncements.map(ann => (
+                  <div key={ann.id} className="announcement-dashboard-card">
+                    <div className="announcement-dashboard-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <Megaphone size={12} style={{ color: '#6366f1' }} />
+                        <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{ann.senderName}</span>
+                        {ann.senderRole && (
+                          <span className={`msg-role-badge msg-role--${ann.senderRole}`} style={{ fontSize: '0.7rem', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
+                            {ann.senderRole === 'global_admin' ? 'מנהל על' : ann.senderRole === 'principal' ? 'מנהל מוסד' : ann.senderRole === 'editor' ? 'עורך' : 'צופה'}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <span style={{ fontSize: '0.7rem', background: '#ede9fe', color: '#6366f1', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                          <Users size={10} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.15rem' }} />
+                          {ann.targetName}
+                        </span>
+                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                          {ann.createdAt ? new Date(ann.createdAt).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }) + ' ' + new Date(ann.createdAt).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '0.88rem', color: '#334155', marginTop: '0.35rem', lineHeight: 1.5 }}>
+                      {ann.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: '0.5rem', width: '100%' }}
+                onClick={() => navigate('/messages')}
+              >
+                לכל ההודעות
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="dashboard-grid">
           {/* Upcoming Events */}

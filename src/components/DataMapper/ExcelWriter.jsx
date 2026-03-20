@@ -12,7 +12,7 @@ import {
   orderBy
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type, Scissors, Copy, Clipboard, ClipboardPaste, RotateCcw, ArrowDownToLine, ArrowRightToLine, Eraser } from 'lucide-react';
+import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type, Scissors, Copy, Clipboard, ClipboardPaste, RotateCcw, ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ArrowLeftToLine, Eraser, Merge, SplitSquareHorizontal, Paintbrush, Palette } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './DataMapper.css';
 
@@ -146,7 +146,22 @@ export default function ExcelWriter() {
   const [contextMenu, setContextMenu] = useState(null);
   const [undoStack, setUndoStack] = useState([]);
   const [cellEditMode, setCellEditMode] = useState(false); // false=navigation, true=editing text
+  const [mergedCells, setMergedCells] = useState([]); // array of { startRow, startCol, endRow, endCol }
+  const [cellStyles, setCellStyles] = useState({}); // keyed by "row-col" => { bg, color }
+  const [colorPickerMenu, setColorPickerMenu] = useState(null); // { type: 'bg'|'color', x, y }
   const tableRef = useRef(null);
+
+  const PRESET_COLORS = [
+    { label: 'לבן', value: '#ffffff' },
+    { label: 'צהוב', value: '#fef08a' },
+    { label: 'ירוק', value: '#86efac' },
+    { label: 'כחול', value: '#93c5fd' },
+    { label: 'אדום', value: '#fca5a5' },
+    { label: 'כתום', value: '#fdba74' },
+    { label: 'סגול', value: '#c4b5fd' },
+    { label: 'ורוד', value: '#f9a8d4' },
+    { label: 'אפור', value: '#d1d5db' },
+  ];
 
   const schoolId = selectedSchool || userData?.schoolId;
 
@@ -173,6 +188,13 @@ export default function ExcelWriter() {
           columns: sheet.columns || ['עמודה 1', 'עמודה 2', 'עמודה 3'],
           rows
         });
+        // Load mergedCells and cellStyles
+        try {
+          setMergedCells(sheet.mergedCellsJson ? JSON.parse(sheet.mergedCellsJson) : []);
+        } catch { setMergedCells([]); }
+        try {
+          setCellStyles(sheet.cellStylesJson ? JSON.parse(sheet.cellStylesJson) : {});
+        } catch { setCellStyles({}); }
       }
     }
   }, [activeSheet, sheets]);
@@ -223,7 +245,9 @@ export default function ExcelWriter() {
     try {
       await updateDoc(doc(db, `sheets_${schoolId}`, activeSheet), {
         columns: sheetData.columns,
-        rowsJson: JSON.stringify(sheetData.rows)
+        rowsJson: JSON.stringify(sheetData.rows),
+        mergedCellsJson: JSON.stringify(mergedCells),
+        cellStylesJson: JSON.stringify(cellStyles)
       });
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message);
@@ -442,9 +466,9 @@ export default function ExcelWriter() {
     }
   }
 
-  // Push current state to undo stack
+  // Push current state to undo stack (includes rows, mergedCells, cellStyles)
   function pushUndo() {
-    setUndoStack(prev => [...prev.slice(-20), JSON.stringify(sheetData.rows)]);
+    setUndoStack(prev => [...prev.slice(-20), JSON.stringify({ rows: sheetData.rows, mergedCells, cellStyles })]);
   }
 
   function handleUndo() {
@@ -452,8 +476,16 @@ export default function ExcelWriter() {
     const prev = undoStack[undoStack.length - 1];
     setUndoStack(s => s.slice(0, -1));
     try {
-      const rows = JSON.parse(prev);
-      setSheetData(sd => ({ ...sd, rows }));
+      const snapshot = JSON.parse(prev);
+      if (snapshot.rows) {
+        setSheetData(sd => ({ ...sd, rows: snapshot.rows }));
+      }
+      if (snapshot.mergedCells !== undefined) {
+        setMergedCells(snapshot.mergedCells);
+      }
+      if (snapshot.cellStyles !== undefined) {
+        setCellStyles(snapshot.cellStyles);
+      }
     } catch {}
   }
 
@@ -477,10 +509,11 @@ export default function ExcelWriter() {
         rows = [...rows, ...newRows];
         changed = true;
       }
+      // Use the (possibly expanded) rows to set formulaBar, avoiding stale reference
+      setFormulaBar(rows[ri]?.[ci] ?? '');
       return changed ? { columns, rows } : prev;
     });
     setEditingCell({ ri, ci });
-    setFormulaBar(sheetData.rows[ri]?.[ci] || '');
     setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
     setCellEditMode(false);
   }
@@ -673,14 +706,115 @@ export default function ExcelWriter() {
     closeContextMenu();
   }
 
-  // Close context menu on click anywhere
+  function ctxInsertRowAbove() {
+    if (!contextMenu) return;
+    pushUndo();
+    setSheetData(prev => {
+      const newRow = new Array(prev.columns.length).fill('');
+      const rows = [...prev.rows];
+      rows.splice(contextMenu.ri, 0, newRow);
+      return { ...prev, rows };
+    });
+    closeContextMenu();
+  }
+
+  function ctxInsertColLeft() {
+    if (!contextMenu) return;
+    pushUndo();
+    setSheetData(prev => ({
+      columns: [...prev.columns.slice(0, contextMenu.ci), `עמודה ${prev.columns.length + 1}`, ...prev.columns.slice(contextMenu.ci)],
+      rows: prev.rows.map(r => [...r.slice(0, contextMenu.ci), '', ...r.slice(contextMenu.ci)])
+    }));
+    closeContextMenu();
+  }
+
+  // --- Cell Merge helpers ---
+  function getMergeForCell(ri, ci) {
+    return mergedCells.find(m =>
+      ri >= m.startRow && ri <= m.endRow && ci >= m.startCol && ci <= m.endCol
+    );
+  }
+
+  function isMergeOrigin(ri, ci) {
+    return mergedCells.some(m => m.startRow === ri && m.startCol === ci);
+  }
+
+  function isMergedButNotOrigin(ri, ci) {
+    return mergedCells.some(m =>
+      ri >= m.startRow && ri <= m.endRow && ci >= m.startCol && ci <= m.endCol &&
+      !(m.startRow === ri && m.startCol === ci)
+    );
+  }
+
+  function ctxMergeCells() {
+    if (!selection) { closeContextMenu(); return; }
+    const minR = Math.min(selection.startRow, selection.endRow);
+    const maxR = Math.max(selection.startRow, selection.endRow);
+    const minC = Math.min(selection.startCol, selection.endCol);
+    const maxC = Math.max(selection.startCol, selection.endCol);
+    if (minR === maxR && minC === maxC) { closeContextMenu(); return; } // single cell, nothing to merge
+    pushUndo();
+    // Remove any existing merges that overlap with this range
+    const filtered = mergedCells.filter(m =>
+      !(m.startRow <= maxR && m.endRow >= minR && m.startCol <= maxC && m.endCol >= minC)
+    );
+    setMergedCells([...filtered, { startRow: minR, startCol: minC, endRow: maxR, endCol: maxC }]);
+    closeContextMenu();
+  }
+
+  function ctxUnmergeCells() {
+    if (!selection) { closeContextMenu(); return; }
+    const minR = Math.min(selection.startRow, selection.endRow);
+    const maxR = Math.max(selection.startRow, selection.endRow);
+    const minC = Math.min(selection.startCol, selection.endCol);
+    const maxC = Math.max(selection.startCol, selection.endCol);
+    pushUndo();
+    setMergedCells(mergedCells.filter(m =>
+      !(m.startRow <= maxR && m.endRow >= minR && m.startCol <= maxC && m.endCol >= minC)
+    ));
+    closeContextMenu();
+  }
+
+  // --- Cell/Text coloring ---
+  function applyColor(type, color) {
+    if (!selection) return;
+    pushUndo();
+    const minR = Math.min(selection.startRow, selection.endRow);
+    const maxR = Math.max(selection.startRow, selection.endRow);
+    const minC = Math.min(selection.startCol, selection.endCol);
+    const maxC = Math.max(selection.startCol, selection.endCol);
+    setCellStyles(prev => {
+      const next = { ...prev };
+      for (let r = minR; r <= maxR; r++) {
+        for (let c = minC; c <= maxC; c++) {
+          const key = `${r}-${c}`;
+          const existing = next[key] || {};
+          if (type === 'bg') {
+            next[key] = { ...existing, bg: color };
+          } else {
+            next[key] = { ...existing, color };
+          }
+        }
+      }
+      return next;
+    });
+    setColorPickerMenu(null);
+    closeContextMenu();
+  }
+
+  function openColorPicker(type, e) {
+    e.stopPropagation();
+    setColorPickerMenu({ type, x: e.clientX, y: e.clientY });
+  }
+
+  // Close context menu and color picker on click anywhere
   useEffect(() => {
-    function handleClick() { setContextMenu(null); }
-    if (contextMenu) {
+    function handleClick() { setContextMenu(null); setColorPickerMenu(null); }
+    if (contextMenu || colorPickerMenu) {
       window.addEventListener('click', handleClick);
       return () => window.removeEventListener('click', handleClick);
     }
-  }, [contextMenu]);
+  }, [contextMenu, colorPickerMenu]);
 
   function insertCalcRow(calcId) {
     if (!editingCell) return;
@@ -870,17 +1004,37 @@ export default function ExcelWriter() {
                             <div className="excel-row-resize" onMouseDown={e => handleRowResize(ri, e)} />
                           </td>
                           {row.map((cell, ci) => {
+                            // Skip cells that are part of a merge but not the origin
+                            if (isMergedButNotOrigin(ri, ci)) return null;
+
+                            const merge = getMergeForCell(ri, ci);
+                            const mergeOrigin = merge && merge.startRow === ri && merge.startCol === ci;
+                            const colSpan = mergeOrigin ? (merge.endCol - merge.startCol + 1) : 1;
+                            const rowSpan = mergeOrigin ? (merge.endRow - merge.startRow + 1) : 1;
+
                             const isFocused = editingCell?.ri === ri && editingCell?.ci === ci;
                             const inSel = isInSelection(ri, ci);
                             const isFormula = typeof cell === 'string' && cell.trim().startsWith('=');
                             const displayVal = isFocused ? cell : getCellDisplay(cell);
 
                             const isEditing = isFocused && cellEditMode;
+
+                            const styleKey = `${ri}-${ci}`;
+                            const cs = cellStyles[styleKey];
+                            const cellInlineStyle = {
+                              width: mergeOrigin ? undefined : (columnWidths[ci] || 120),
+                              height: mergeOrigin ? undefined : (rowHeights[ri] || 32),
+                              ...(cs?.bg ? { backgroundColor: cs.bg } : {}),
+                              ...(cs?.color ? { color: cs.color } : {}),
+                            };
+
                             return (
                               <td
                                 key={ci}
                                 className={`excel-cell ${inSel ? 'excel-cell--selected' : ''} ${isFocused ? 'excel-cell--focused' : ''} ${isFormula && !isFocused ? 'excel-cell--formula' : ''} ${clipboard?.mode === 'cut' && clipboard.ri === ri && clipboard.ci === ci ? 'excel-cell--cut' : ''}`}
-                                style={{ width: columnWidths[ci] || 120, height: rowHeights[ri] || 32 }}
+                                style={cellInlineStyle}
+                                colSpan={colSpan > 1 ? colSpan : undefined}
+                                rowSpan={rowSpan > 1 ? rowSpan : undefined}
                                 onMouseDown={e => handleCellMouseDown(ri, ci, e)}
                                 onMouseEnter={() => handleCellMouseEnter(ri, ci)}
                                 onContextMenu={e => handleContextMenu(ri, ci, e)}
@@ -903,6 +1057,7 @@ export default function ExcelWriter() {
                                   }}
                                   onKeyDown={e => handleCellKeyDown(ri, ci, e)}
                                   className={`excel-cell-input ${isFocused && !cellEditMode ? 'excel-cell-input--nav' : ''}`}
+                                  style={cs?.color ? { color: cs.color } : undefined}
                                   tabIndex={-1}
                                   autoFocus={isFocused}
                                   readOnly={isFocused && !cellEditMode}
@@ -963,8 +1118,28 @@ export default function ExcelWriter() {
             <button className="ctx-item" onClick={ctxDelete}><Trash2 size={13} /> מחיקת תוכן</button>
             <button className="ctx-item" onClick={ctxClearRow}><Eraser size={13} /> ניקוי שורה</button>
             <div className="ctx-divider" />
+            <button className="ctx-item" onClick={ctxInsertRowAbove}><ArrowUpToLine size={13} /> הוספת שורה מעל</button>
             <button className="ctx-item" onClick={ctxInsertRowBelow}><ArrowDownToLine size={13} /> הוספת שורה מתחת</button>
-            <button className="ctx-item" onClick={ctxInsertColRight}><ArrowRightToLine size={13} /> הוספת עמודה</button>
+            <button className="ctx-item" onClick={ctxInsertColLeft}><ArrowLeftToLine size={13} /> הוספת עמודה משמאל</button>
+            <button className="ctx-item" onClick={ctxInsertColRight}><ArrowRightToLine size={13} /> הוספת עמודה מימין</button>
+            <div className="ctx-divider" />
+            <button className="ctx-item" onClick={ctxMergeCells} disabled={!selectionMulti}>
+              <Merge size={13} /> מיזוג תאים
+            </button>
+            <button className="ctx-item" onClick={ctxUnmergeCells}>
+              <SplitSquareHorizontal size={13} /> ביטול מיזוג
+            </button>
+            <div className="ctx-divider" />
+            <div className="ctx-item ctx-item--submenu" style={{ position: 'relative' }}>
+              <button className="ctx-item" onClick={e => openColorPicker('bg', e)} style={{ border: 'none', width: '100%', textAlign: 'right' }}>
+                <Paintbrush size={13} /> צבע רקע
+              </button>
+            </div>
+            <div className="ctx-item ctx-item--submenu" style={{ position: 'relative' }}>
+              <button className="ctx-item" onClick={e => openColorPicker('color', e)} style={{ border: 'none', width: '100%', textAlign: 'right' }}>
+                <Palette size={13} /> צבע טקסט
+              </button>
+            </div>
             <div className="ctx-divider" />
             <button className="ctx-item ctx-item--danger" onClick={ctxDeleteRow} disabled={sheetData.rows.length <= 1}>
               <Trash2 size={13} /> מחיקת שורה
@@ -976,6 +1151,34 @@ export default function ExcelWriter() {
             <button className="ctx-item" onClick={handleUndo} disabled={undoStack.length === 0}>
               <RotateCcw size={13} /> ביטול (Ctrl+Z)
             </button>
+          </div>
+        )}
+
+        {/* Color picker submenu */}
+        {colorPickerMenu && (
+          <div
+            className="cell-context-menu"
+            style={{ top: colorPickerMenu.y, left: colorPickerMenu.x, minWidth: 140 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ padding: '0.3rem 0.5rem', fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>
+              {colorPickerMenu.type === 'bg' ? 'צבע רקע' : 'צבע טקסט'}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, padding: '0.3rem 0.5rem' }}>
+              {PRESET_COLORS.map(c => (
+                <button
+                  key={c.value}
+                  title={c.label}
+                  onClick={() => applyColor(colorPickerMenu.type, c.value)}
+                  style={{
+                    width: 28, height: 28, borderRadius: 4,
+                    backgroundColor: c.value,
+                    border: '1px solid #cbd5e1',
+                    cursor: 'pointer',
+                  }}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>

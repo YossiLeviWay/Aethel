@@ -18,6 +18,7 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassw
 import { secondaryAuth } from '../../firebase';
 import Header from '../Layout/Header';
 import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User } from 'lucide-react';
+import RolesManager from './RolesManager';
 import '../Gantt/Gantt.css';
 import './Staff.css';
 
@@ -179,7 +180,7 @@ export default function StaffManagement() {
 
   // Edit modal
   const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ fullName: '', email: '', phone: '', role: '', jobTitle: '', assignedSchoolId: '', newPassword: '' });
+  const [editForm, setEditForm] = useState({ fullName: '', email: '', phone: '', role: '', jobTitle: '', assignedSchoolId: '', newPassword: '', customRoleIds: [], teamIds: [] });
   const [editError, setEditError] = useState('');
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [schoolsToRemove, setSchoolsToRemove] = useState([]);
@@ -188,6 +189,9 @@ export default function StaffManagement() {
   const [permissionsUser, setPermissionsUser] = useState(null);
   const [permissionsForm, setPermissionsForm] = useState({});
   const [expandedGroups, setExpandedGroups] = useState({});
+  const [showRolesManager, setShowRolesManager] = useState(false);
+  const [customRoles, setCustomRoles] = useState([]);
+  const [teams, setTeams] = useState([]);
 
   const schoolId = selectedSchool || userData?.schoolId;
   const isAdmin = isGlobalAdmin();
@@ -197,6 +201,30 @@ export default function StaffManagement() {
   useEffect(() => {
     loadSchools();
   }, []);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    loadCustomRoles();
+    loadTeams();
+  }, [schoolId]);
+
+  async function loadCustomRoles() {
+    try {
+      const snap = await getDocs(collection(db, `roles_${schoolId}`));
+      setCustomRoles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error('Error loading custom roles:', err);
+    }
+  }
+
+  async function loadTeams() {
+    try {
+      const snap = await getDocs(collection(db, `teams_${schoolId}`));
+      setTeams(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error('Error loading teams:', err);
+    }
+  }
 
   useEffect(() => {
     if (isAdmin) {
@@ -289,7 +317,9 @@ export default function StaffManagement() {
       email: editForm.email.trim(),
       phone: editForm.phone.trim(),
       role: editForm.role,
-      jobTitle: editForm.jobTitle
+      jobTitle: editForm.jobTitle,
+      customRoleIds: editForm.customRoleIds || [],
+      teamIds: editForm.teamIds || [],
     };
     if (editForm.assignedSchoolId) {
       updateData.schoolIds = arrayUnion(editForm.assignedSchoolId);
@@ -373,7 +403,9 @@ export default function StaffManagement() {
       role: user.role,
       jobTitle: user.jobTitle || '',
       assignedSchoolId: '',
-      newPassword: ''
+      newPassword: '',
+      customRoleIds: user.customRoleIds || [],
+      teamIds: user.teamIds || [],
     });
     setSchoolsToRemove([]);
     setEditError('');
@@ -512,11 +544,17 @@ export default function StaffManagement() {
                 כרטיסיות
               </button>
             </div>
-            {isAdmin && (
-              <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-                <UserPlus size={16} />
-                הוספת איש צוות
-              </button>
+            {canEdit && (
+              <>
+                <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+                  <UserPlus size={16} />
+                  הוספת איש צוות
+                </button>
+                <button className="btn btn-secondary" onClick={() => setShowRolesManager(true)}>
+                  <Shield size={16} />
+                  ניהול תפקידים
+                </button>
+              </>
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -628,6 +666,24 @@ export default function StaffManagement() {
                   <h4 className="staff-card-name">{user.fullName}</h4>
                   <p className="staff-card-title">{user.jobTitle || '—'}</p>
                   <span className={`role-badge role-${user.role}`}>{ROLE_LABELS[user.role] || 'צופה'}</span>
+                  {/* Custom roles */}
+                  {user.customRoleIds && user.customRoleIds.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', justifyContent: 'center', marginTop: '0.3rem' }}>
+                      {user.customRoleIds.map(rid => {
+                        const r = customRoles.find(cr => cr.id === rid);
+                        return r ? <span key={rid} style={{ fontSize: '0.68rem', background: '#ede9fe', color: '#6d28d9', padding: '0.1rem 0.4rem', borderRadius: 4 }}>{r.name}</span> : null;
+                      })}
+                    </div>
+                  )}
+                  {/* Teams */}
+                  {user.teamIds && user.teamIds.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', justifyContent: 'center', marginTop: '0.3rem' }}>
+                      {user.teamIds.map(tid => {
+                        const t = teams.find(tm => tm.id === tid);
+                        return t ? <span key={tid} style={{ fontSize: '0.68rem', background: '#ecfdf5', color: '#065f46', padding: '0.1rem 0.4rem', borderRadius: 4 }}>{t.name}</span> : null;
+                      })}
+                    </div>
+                  )}
                   {schoolNames.length > 0 && (
                     <p className="staff-card-school">{schoolNames.join(' • ')}</p>
                   )}
@@ -849,6 +905,57 @@ export default function StaffManagement() {
                     </div>
                   )}
 
+                  {/* Custom Roles */}
+                  {customRoles.length > 0 && (
+                    <div className="form-group">
+                      <label>
+                        <Shield size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                        תפקידים מותאמים
+                      </label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                        {customRoles.map(role => (
+                          <label key={role.id} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.6rem', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: '0.8rem', cursor: 'pointer', background: editForm.customRoleIds.includes(role.id) ? '#eff6ff' : '#fff' }}>
+                            <input
+                              type="checkbox"
+                              checked={editForm.customRoleIds.includes(role.id)}
+                              onChange={() => setEditForm(prev => ({
+                                ...prev,
+                                customRoleIds: prev.customRoleIds.includes(role.id)
+                                  ? prev.customRoleIds.filter(id => id !== role.id)
+                                  : [...prev.customRoleIds, role.id]
+                              }))}
+                            />
+                            {role.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Teams */}
+                  {teams.length > 0 && (
+                    <div className="form-group">
+                      <label>צוותים</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                        {teams.map(team => (
+                          <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.6rem', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: '0.8rem', cursor: 'pointer', background: editForm.teamIds.includes(team.id) ? '#eff6ff' : '#fff' }}>
+                            <input
+                              type="checkbox"
+                              checked={editForm.teamIds.includes(team.id)}
+                              onChange={() => setEditForm(prev => ({
+                                ...prev,
+                                teamIds: prev.teamIds.includes(team.id)
+                                  ? prev.teamIds.filter(id => id !== team.id)
+                                  : [...prev.teamIds, team.id]
+                              }))}
+                            />
+                            {team.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Password Change Section */}
                   <div className="form-group">
                     <label>
@@ -1001,14 +1108,34 @@ export default function StaffManagement() {
                 <button className="modal-close" onClick={() => setPermissionsUser(null)}><X size={18} /></button>
               </div>
               <div style={{ padding: '0.75rem 1.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>תפקיד:</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>תפקיד מערכת:</span>
                   <span className={`role-badge role-${permissionsUser.role}`}>
                     {ROLE_LABELS[permissionsUser.role] || 'צופה'}
                   </span>
                 </div>
+                {/* Custom roles */}
+                {permissionsUser.customRoleIds && permissionsUser.customRoleIds.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>תפקידים מותאמים:</span>
+                    {permissionsUser.customRoleIds.map(rid => {
+                      const r = customRoles.find(cr => cr.id === rid);
+                      return r ? <span key={rid} style={{ fontSize: '0.72rem', background: '#ede9fe', color: '#6d28d9', padding: '0.15rem 0.4rem', borderRadius: 4 }}>{r.name}</span> : null;
+                    })}
+                  </div>
+                )}
+                {/* Teams */}
+                {permissionsUser.teamIds && permissionsUser.teamIds.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>צוותים:</span>
+                    {permissionsUser.teamIds.map(tid => {
+                      const t = teams.find(tm => tm.id === tid);
+                      return t ? <span key={tid} style={{ fontSize: '0.72rem', background: '#ecfdf5', color: '#065f46', padding: '0.15rem 0.4rem', borderRadius: 4 }}>{t.name}</span> : null;
+                    })}
+                  </div>
+                )}
                 <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '0 0 1rem' }}>
-                  ניתן להתאים את ההרשאות לכל משתמש בנפרד.
+                  ניתן להתאים את ההרשאות לכל משתמש בנפרד. הרשאות מתפקידים מותאמים יתווספו אוטומטית.
                 </p>
               </div>
               <div className="permissions-list">
@@ -1047,6 +1174,14 @@ export default function StaffManagement() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Roles Manager Modal */}
+        {showRolesManager && (
+          <RolesManager
+            schoolId={schoolId}
+            onClose={() => { setShowRolesManager(false); loadCustomRoles(); }}
+          />
         )}
       </div>
     </div>

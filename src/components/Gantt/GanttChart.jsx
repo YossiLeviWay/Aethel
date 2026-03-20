@@ -61,7 +61,7 @@ function dateKey(date) {
 }
 
 export default function GanttChart() {
-  const { selectedSchool, userData } = useAuth();
+  const { selectedSchool, userData, isGlobalAdmin, isPrincipal } = useAuth();
   const [searchParams] = useSearchParams();
   const now = new Date();
   const paramYear = searchParams.get('year');
@@ -84,8 +84,25 @@ export default function GanttChart() {
   const [visibleDays, setVisibleDays] = useState([0, 1, 2, 3, 4, 5, 6]);
   const [showDaySettings, setShowDaySettings] = useState(false);
   const [allHolidays, setAllHolidays] = useState([]);
+  const [userTeamIds, setUserTeamIds] = useState([]);
 
   const schoolId = selectedSchool || userData?.schoolId;
+
+  // Load user's team memberships for visibility filtering
+  useEffect(() => {
+    if (!schoolId || !userData?.uid) return;
+    const unsub = onSnapshot(collection(db, `teams_${schoolId}`), (snap) => {
+      const memberTeams = [];
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (Array.isArray(data.memberIds) && data.memberIds.includes(userData.uid)) {
+          memberTeams.push(d.id);
+        }
+      });
+      setUserTeamIds(memberTeams);
+    }, () => setUserTeamIds([]));
+    return unsub;
+  }, [schoolId, userData?.uid]);
 
   // Load visible days setting from Firestore
   useEffect(() => {
@@ -175,9 +192,23 @@ export default function GanttChart() {
     return unsub;
   }, [schoolId]);
 
+  // Filter events based on team visibility
+  const canSeeAllEvents = isGlobalAdmin() || isPrincipal();
+
+  function isEventVisible(event) {
+    if (canSeeAllEvents) return true;
+    if (!event.visibleTo || event.visibleTo === 'all') return true;
+    if (Array.isArray(event.visibleTo)) {
+      return event.visibleTo.some(teamId => userTeamIds.includes(teamId));
+    }
+    return true;
+  }
+
   function getEventsForCell(date, category) {
     const key = dateKey(date);
-    const cellEvents = events.filter(e => e.date === key && e.category === category);
+    const cellEvents = events
+      .filter(e => e.date === key && e.category === category)
+      .filter(isEventVisible);
     if (!searchQuery.trim()) return cellEvents;
     const q = searchQuery.toLowerCase();
     return cellEvents.map(e => ({
@@ -305,9 +336,10 @@ export default function GanttChart() {
   const visibleColumnWidths = visibleDays.map(di => columnWidths[di] || 1);
   const totalFlex = visibleColumnWidths.reduce((a, b) => a + b, 0);
 
-  // Count search matches for feedback
+  // Count search matches for feedback (respecting visibility)
   const searchMatchCount = searchQuery.trim()
     ? events.filter(e => {
+        if (!isEventVisible(e)) return false;
         const q = searchQuery.toLowerCase();
         return (e.title || '').toLowerCase().includes(q) ||
                (e.description || '').toLowerCase().includes(q);
@@ -542,6 +574,7 @@ export default function GanttChart() {
           category={selectedCategory}
           categories={categories}
           colors={PASTEL_COLORS}
+          schoolId={schoolId}
           onSave={handleSaveEvent}
           onDelete={editingEvent ? handleDeleteEvent : null}
           onClose={() => setModalOpen(false)}

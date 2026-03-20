@@ -500,3 +500,25 @@
     flex-wrap: wrap;
   }
 }
+
+/* Recent Announcements in Dashboard */
+.announcement-list-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.announcement-dashboard-card {
+  background: #faf5ff;
+  border: 1px solid #e9d5ff;
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+}
+
+.announcement-dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}

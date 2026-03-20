@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { db } from '../../firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { useAuth } from '../../contexts/AuthContext';
 import './Gantt.css';
 
 function dateKey(date) {
@@ -14,8 +17,23 @@ export default function EventModal({
   colors,
   onSave,
   onDelete,
-  onClose
+  onClose,
+  schoolId: schoolIdProp
 }) {
+  const { selectedSchool, userData } = useAuth();
+  const schoolId = schoolIdProp || selectedSchool || userData?.schoolId;
+
+  const [teams, setTeams] = useState([]);
+  const [visibilityMode, setVisibilityMode] = useState(
+    event?.visibleTo === 'all' || !event?.visibleTo ? 'all' : 'teams'
+  );
+  const [selectedTeams, setSelectedTeams] = useState(
+    Array.isArray(event?.visibleTo) ? event.visibleTo : []
+  );
+  const [editableBy, setEditableBy] = useState(
+    Array.isArray(event?.editableBy) ? event.editableBy : []
+  );
+
   const [form, setForm] = useState({
     title: event?.title || '',
     description: event?.description || '',
@@ -25,14 +43,44 @@ export default function EventModal({
     date: event?.date || (date ? dateKey(date) : '')
   });
 
+  // Load teams from Firestore
+  useEffect(() => {
+    if (!schoolId) return;
+    const unsub = onSnapshot(collection(db, `teams_${schoolId}`), (snap) => {
+      setTeams(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => setTeams([]));
+    return unsub;
+  }, [schoolId]);
+
   function handleChange(e) {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  }
+
+  function handleTeamToggle(teamId) {
+    setSelectedTeams(prev =>
+      prev.includes(teamId)
+        ? prev.filter(id => id !== teamId)
+        : [...prev, teamId]
+    );
+  }
+
+  function handleEditableToggle(teamId) {
+    setEditableBy(prev =>
+      prev.includes(teamId)
+        ? prev.filter(id => id !== teamId)
+        : [...prev, teamId]
+    );
   }
 
   function handleSubmit(e) {
     e.preventDefault();
     if (!form.title.trim()) return;
-    onSave(form);
+    const visibleTo = visibilityMode === 'all' ? 'all' : selectedTeams;
+    onSave({
+      ...form,
+      visibleTo,
+      editableBy
+    });
   }
 
   return (
@@ -103,6 +151,61 @@ export default function EventModal({
                 />
               ))}
             </div>
+          </div>
+
+          {/* Visibility selector */}
+          <div className="form-group">
+            <label>נראות</label>
+            <select
+              value={visibilityMode}
+              onChange={e => setVisibilityMode(e.target.value)}
+            >
+              <option value="all">כולם</option>
+              <option value="teams">צוותים מסוימים</option>
+            </select>
+          </div>
+
+          {visibilityMode === 'teams' && (
+            <div className="form-group">
+              <label>בחירת צוותים לנראות</label>
+              {teams.length === 0 ? (
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>לא נמצאו צוותים</p>
+              ) : (
+                <div className="team-checkboxes" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {teams.map(team => (
+                    <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTeams.includes(team.id)}
+                        onChange={() => handleTeamToggle(team.id)}
+                      />
+                      {team.name}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Editable by selector */}
+          <div className="form-group">
+            <label>הרשאת עריכה לצוותים</label>
+            {teams.length === 0 ? (
+              <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>לא נמצאו צוותים</p>
+            ) : (
+              <div className="team-checkboxes" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {teams.map(team => (
+                  <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={editableBy.includes(team.id)}
+                      onChange={() => handleEditableToggle(team.id)}
+                    />
+                    {team.name}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="modal-actions">

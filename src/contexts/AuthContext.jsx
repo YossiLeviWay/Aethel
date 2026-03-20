@@ -149,6 +149,18 @@ export function AuthProvider({ children }) {
     return userData?.role === 'editor';
   }
 
+  function isPending() {
+    if (!userData) return false;
+    if (userData.role === 'global_admin') return false;
+    const hasApprovedSchools = (userData.schoolIds && userData.schoolIds.length > 0) || userData.schoolId;
+    const hasPending = userData.pendingSchools && userData.pendingSchools.length > 0;
+    return !hasApprovedSchools && hasPending;
+  }
+
+  function isViewer() {
+    return userData?.role === 'viewer';
+  }
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -177,7 +189,9 @@ export function AuthProvider({ children }) {
     isEditor,
     fetchUserData,
     approveUser,
-    rejectUser
+    rejectUser,
+    isPending,
+    isViewer
   };
 
   return (

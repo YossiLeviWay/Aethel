@@ -14,7 +14,7 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Send, Search, Mail, Circle, Trash2, X, Shield } from 'lucide-react';
+import { Send, Search, Mail, Circle, Trash2, X, Shield, Megaphone, Users, MessageCircle } from 'lucide-react';
 import './Messages.css';
 
 const ROLE_LABELS_MSG = {
@@ -39,6 +39,19 @@ export default function Messages() {
   const messagesEndRef = useRef(null);
   const uid = currentUser?.uid;
   const schoolId = selectedSchool || userData?.schoolId;
+
+  // Tab state: 'chats' or 'announcements'
+  const [activeTab, setActiveTab] = useState('chats');
+
+  // Announcements state
+  const [announcements, setAnnouncements] = useState([]);
+  const [showNewAnnouncement, setShowNewAnnouncement] = useState(false);
+  const [announcementText, setAnnouncementText] = useState('');
+  const [announcementTarget, setAnnouncementTarget] = useState('all');
+  const [teams, setTeams] = useState([]);
+
+  // Admin users for "Contact Admin" feature
+  const [adminUsers, setAdminUsers] = useState([]);
 
   // Load users from the same school only (admin sees all)
   useEffect(() => {
@@ -69,9 +82,61 @@ export default function Messages() {
       } else {
         allUsers = [];
       }
+
+      // Always load global_admin users and include them in contacts
+      const adminQuery = query(collection(db, 'users'), where('role', '==', 'global_admin'));
+      const adminSnap = await getDocs(adminQuery);
+      const admins = adminSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(u => u.id !== uid);
+      setAdminUsers(admins);
+
+      // Merge admin users into the allUsers list (avoid duplicates)
+      const userIds = new Set(allUsers.map(u => u.id));
+      for (const admin of admins) {
+        if (!userIds.has(admin.id)) {
+          allUsers.push(admin);
+        }
+      }
+
       setUsers(allUsers);
     }
     loadUsers();
+  }, [uid, schoolId]);
+
+  // Load teams for announcement targeting
+  useEffect(() => {
+    if (!schoolId) return;
+    async function loadTeams() {
+      try {
+        const snap = await getDocs(collection(db, `teams_${schoolId}`));
+        setTeams(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.error('Error loading teams:', err);
+        setTeams([]);
+      }
+    }
+    loadTeams();
+  }, [schoolId]);
+
+  // Listen to announcements
+  useEffect(() => {
+    if (!uid) return;
+    const q = query(
+      collection(db, 'announcements'),
+      orderBy('createdAt', 'desc')
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      let anns = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Filter: show announcements for target='all' or matching schoolId
+      if (!isGlobalAdmin() && schoolId) {
+        anns = anns.filter(a => a.target === 'all' || a.schoolId === schoolId);
+      }
+      setAnnouncements(anns);
+    }, (err) => {
+      console.error('Error loading announcements:', err);
+    });
+    return unsub;
   }, [uid, schoolId]);
 
   // Listen to conversations (scoped by school for non-admin)
@@ -153,6 +218,7 @@ export default function Messages() {
     if (existing) {
       setActiveConv(existing);
       setShowNewConv(false);
+      setActiveTab('chats');
       return;
     }
     const convData = {
@@ -167,6 +233,13 @@ export default function Messages() {
     const newConv = { id: convDoc.id, ...convData };
     setActiveConv(newConv);
     setShowNewConv(false);
+    setActiveTab('chats');
+  }
+
+  async function contactAdmin() {
+    if (adminUsers.length === 0) return;
+    // Start conversation with the first admin found
+    await startConversation(adminUsers[0]);
   }
 
   async function sendMessage(e) {
@@ -187,6 +260,33 @@ export default function Messages() {
       lastMessageAt: new Date().toISOString(),
       unreadBy: otherIds
     });
+  }
+
+  async function sendAnnouncement(e) {
+    e.preventDefault();
+    if (!announcementText.trim()) return;
+    const text = announcementText.trim();
+    setAnnouncementText('');
+
+    let targetName = 'כולם';
+    if (announcementTarget !== 'all') {
+      const team = teams.find(t => t.id === announcementTarget);
+      targetName = team?.name || announcementTarget;
+    }
+
+    await addDoc(collection(db, 'announcements'), {
+      text,
+      senderId: uid,
+      senderName: userData?.fullName || '',
+      senderRole: userData?.role || '',
+      createdAt: new Date().toISOString(),
+      target: announcementTarget,
+      targetName,
+      schoolId: schoolId || ''
+    });
+
+    setShowNewAnnouncement(false);
+    setAnnouncementTarget('all');
   }
 
   async function deleteMessage(msg) {
@@ -236,11 +336,19 @@ export default function Messages() {
     return name.includes(searchConv.toLowerCase());
   });
 
-  const filteredUsers = users.filter(u => {
-    if (!searchUsers.trim()) return true;
-    return (u.fullName || '').toLowerCase().includes(searchUsers.toLowerCase()) ||
-           (u.email || '').toLowerCase().includes(searchUsers.toLowerCase());
-  });
+  // Sort users: admins first, then alphabetical
+  const sortedFilteredUsers = users
+    .filter(u => {
+      if (!searchUsers.trim()) return true;
+      return (u.fullName || '').toLowerCase().includes(searchUsers.toLowerCase()) ||
+             (u.email || '').toLowerCase().includes(searchUsers.toLowerCase());
+    })
+    .sort((a, b) => {
+      const aIsAdmin = a.role === 'global_admin' ? 0 : 1;
+      const bIsAdmin = b.role === 'global_admin' ? 0 : 1;
+      if (aIsAdmin !== bIsAdmin) return aIsAdmin - bIsAdmin;
+      return (a.fullName || '').localeCompare(b.fullName || '', 'he');
+    });
 
   function formatMsgDate(dateStr) {
     if (!dateStr) return '';
@@ -262,80 +370,209 @@ export default function Messages() {
         <div className="messages-layout">
           {/* Conversations sidebar */}
           <div className="conv-panel">
-            <div className="conv-header">
-              <h3>שיחות</h3>
-              <button className="btn btn-primary btn-sm" onClick={() => setShowNewConv(!showNewConv)}>
-                הודעה חדשה
+            {/* Tabs: Chats / Announcements */}
+            <div className="msg-tabs">
+              <button
+                className={`msg-tab ${activeTab === 'chats' ? 'msg-tab--active' : ''}`}
+                onClick={() => setActiveTab('chats')}
+              >
+                <MessageCircle size={14} />
+                שיחות
+              </button>
+              <button
+                className={`msg-tab ${activeTab === 'announcements' ? 'msg-tab--active' : ''}`}
+                onClick={() => setActiveTab('announcements')}
+              >
+                <Megaphone size={14} />
+                הודעות כלליות
               </button>
             </div>
 
-            {showNewConv && (
-              <div className="new-conv-panel">
+            {activeTab === 'chats' && (
+              <>
+                <div className="conv-header">
+                  <h3>שיחות</h3>
+                  <div style={{ display: 'flex', gap: '0.35rem' }}>
+                    {adminUsers.length > 0 && (
+                      <button
+                        className="btn btn-secondary btn-sm contact-admin-btn"
+                        onClick={contactAdmin}
+                        title="פנה לאדמין"
+                      >
+                        <Shield size={12} />
+                        פנה לאדמין
+                      </button>
+                    )}
+                    <button className="btn btn-primary btn-sm" onClick={() => setShowNewConv(!showNewConv)}>
+                      הודעה חדשה
+                    </button>
+                  </div>
+                </div>
+
+                {showNewConv && (
+                  <div className="new-conv-panel">
+                    <div className="search-bar" style={{ margin: '0.5rem', minWidth: 'auto' }}>
+                      <Search size={12} />
+                      <input
+                        value={searchUsers}
+                        onChange={e => setSearchUsers(e.target.value)}
+                        placeholder="חיפוש משתמש..."
+                        autoFocus
+                      />
+                    </div>
+                    <div className="user-list">
+                      {sortedFilteredUsers.slice(0, 20).map(u => (
+                        <div key={u.id} className="user-item" onClick={() => startConversation(u)}>
+                          <div className={`user-avatar ${u.role === 'global_admin' ? 'user-avatar--admin' : ''}`}>
+                            {u.fullName?.charAt(0) || '?'}
+                          </div>
+                          <div className="user-info">
+                            <div className="user-name-row">
+                              <span className="user-name">{u.fullName}</span>
+                              {u.role === 'global_admin' && (
+                                <span className="admin-badge">
+                                  <Shield size={10} />
+                                  מנהל על
+                                </span>
+                              )}
+                            </div>
+                            <span className="user-email">{u.email}</span>
+                          </div>
+                        </div>
+                      ))}
+                      {sortedFilteredUsers.length === 0 && <p className="conv-empty">לא נמצאו משתמשים</p>}
+                    </div>
+                  </div>
+                )}
+
                 <div className="search-bar" style={{ margin: '0.5rem', minWidth: 'auto' }}>
                   <Search size={12} />
                   <input
-                    value={searchUsers}
-                    onChange={e => setSearchUsers(e.target.value)}
-                    placeholder="חיפוש משתמש..."
-                    autoFocus
+                    value={searchConv}
+                    onChange={e => setSearchConv(e.target.value)}
+                    placeholder="חיפוש שיחות..."
                   />
                 </div>
-                <div className="user-list">
-                  {filteredUsers.slice(0, 20).map(u => (
-                    <div key={u.id} className="user-item" onClick={() => startConversation(u)}>
-                      <div className="user-avatar">{u.fullName?.charAt(0) || '?'}</div>
-                      <div className="user-info">
-                        <span className="user-name">{u.fullName}</span>
-                        <span className="user-email">{u.email}</span>
+
+                <div className="conv-list">
+                  {filteredConversations.map(conv => {
+                    const isUnread = conv.unreadBy?.includes(uid);
+                    return (
+                      <div
+                        key={conv.id}
+                        className={`conv-item ${activeConv?.id === conv.id ? 'conv-item--active' : ''} ${isUnread ? 'conv-item--unread' : ''}`}
+                        onClick={() => setActiveConv(conv)}
+                      >
+                        <div className="conv-avatar">{getInitial(conv)}</div>
+                        <div className="conv-info">
+                          <div className="conv-name-row">
+                            <span className="conv-name">{getOtherName(conv)}</span>
+                            {(() => { const other = getOtherUser(conv); return other?.role ? (
+                              <span className={`conv-role-tag conv-role--${other.role}`}>{ROLE_LABELS_MSG[other.role]}</span>
+                            ) : null; })()}
+                          </div>
+                          <span className="conv-last-msg">{conv.lastMessage || 'שיחה חדשה'}</span>
+                        </div>
+                        {isUnread && <Circle size={8} fill="#2563eb" className="conv-unread-dot" />}
                       </div>
-                    </div>
-                  ))}
-                  {filteredUsers.length === 0 && <p className="conv-empty">לא נמצאו משתמשים</p>}
+                    );
+                  })}
+                  {filteredConversations.length === 0 && !showNewConv && (
+                    <p className="conv-empty">אין שיחות עדיין</p>
+                  )}
                 </div>
-              </div>
+              </>
             )}
 
-            <div className="search-bar" style={{ margin: '0.5rem', minWidth: 'auto' }}>
-              <Search size={12} />
-              <input
-                value={searchConv}
-                onChange={e => setSearchConv(e.target.value)}
-                placeholder="חיפוש שיחות..."
-              />
-            </div>
-
-            <div className="conv-list">
-              {filteredConversations.map(conv => {
-                const isUnread = conv.unreadBy?.includes(uid);
-                return (
-                  <div
-                    key={conv.id}
-                    className={`conv-item ${activeConv?.id === conv.id ? 'conv-item--active' : ''} ${isUnread ? 'conv-item--unread' : ''}`}
-                    onClick={() => setActiveConv(conv)}
+            {activeTab === 'announcements' && (
+              <>
+                <div className="conv-header">
+                  <h3>הודעות כלליות</h3>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => setShowNewAnnouncement(!showNewAnnouncement)}
                   >
-                    <div className="conv-avatar">{getInitial(conv)}</div>
-                    <div className="conv-info">
-                      <div className="conv-name-row">
-                        <span className="conv-name">{getOtherName(conv)}</span>
-                        {(() => { const other = getOtherUser(conv); return other?.role ? (
-                          <span className={`conv-role-tag conv-role--${other.role}`}>{ROLE_LABELS_MSG[other.role]}</span>
-                        ) : null; })()}
+                    הודעה כללית
+                  </button>
+                </div>
+
+                {showNewAnnouncement && (
+                  <div className="new-announcement-panel">
+                    <form onSubmit={sendAnnouncement}>
+                      <div className="announcement-target">
+                        <label>יעד:</label>
+                        <select
+                          value={announcementTarget}
+                          onChange={e => setAnnouncementTarget(e.target.value)}
+                        >
+                          <option value="all">כולם</option>
+                          {teams.map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
                       </div>
-                      <span className="conv-last-msg">{conv.lastMessage || 'שיחה חדשה'}</span>
-                    </div>
-                    {isUnread && <Circle size={8} fill="#2563eb" className="conv-unread-dot" />}
+                      <textarea
+                        value={announcementText}
+                        onChange={e => setAnnouncementText(e.target.value)}
+                        placeholder="כתבו הודעה כללית..."
+                        rows={3}
+                        autoFocus
+                      />
+                      <div className="announcement-actions">
+                        <button
+                          type="submit"
+                          className="btn btn-primary btn-sm"
+                          disabled={!announcementText.trim()}
+                        >
+                          <Megaphone size={12} />
+                          שלח הודעה
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => { setShowNewAnnouncement(false); setAnnouncementText(''); setAnnouncementTarget('all'); }}
+                        >
+                          ביטול
+                        </button>
+                      </div>
+                    </form>
                   </div>
-                );
-              })}
-              {filteredConversations.length === 0 && !showNewConv && (
-                <p className="conv-empty">אין שיחות עדיין</p>
-              )}
-            </div>
+                )}
+
+                <div className="conv-list">
+                  {announcements.length === 0 ? (
+                    <p className="conv-empty">אין הודעות כלליות עדיין</p>
+                  ) : (
+                    announcements.map(ann => (
+                      <div key={ann.id} className="announcement-item">
+                        <div className="announcement-header">
+                          <div className="announcement-sender">
+                            <Megaphone size={12} />
+                            <span className="announcement-sender-name">{ann.senderName}</span>
+                            {ann.senderRole && (
+                              <span className={`msg-role-badge msg-role--${ann.senderRole}`}>
+                                {ROLE_LABELS_MSG[ann.senderRole] || ''}
+                              </span>
+                            )}
+                          </div>
+                          <span className="announcement-target-badge">
+                            <Users size={10} />
+                            {ann.targetName}
+                          </span>
+                        </div>
+                        <div className="announcement-text">{ann.text}</div>
+                        <div className="announcement-time">{formatMsgDate(ann.createdAt)}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Chat area */}
           <div className="msg-area">
-            {activeConv ? (
+            {activeTab === 'chats' && activeConv ? (
               <>
                 <div className="msg-header">
                   <div className="msg-header-avatar">{getInitial(activeConv)}</div>
@@ -402,6 +639,11 @@ export default function Messages() {
                   </button>
                 </form>
               </>
+            ) : activeTab === 'announcements' ? (
+              <div className="msg-empty-state">
+                <Megaphone size={40} />
+                <p>הודעות כלליות מוצגות בצד</p>
+              </div>
             ) : (
               <div className="msg-empty-state">
                 <Mail size={40} />
