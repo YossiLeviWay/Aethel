@@ -12,7 +12,9 @@ import {
   deleteDoc,
   doc,
   orderBy,
-  onSnapshot
+  onSnapshot,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import Header from '../Layout/Header';
@@ -33,13 +35,15 @@ import {
   Plus,
   Save,
   ArrowLeft,
-  Search
+  Search,
+  Pin
 } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Files.css';
 
 export default function FileManager() {
-  const { userData, selectedSchool, isPrincipal, isGlobalAdmin } = useAuth();
+  const { userData, currentUser, selectedSchool, isPrincipal, isGlobalAdmin } = useAuth();
+  const uid = currentUser?.uid;
   const [folders, setFolders] = useState([]);
   const [files, setFiles] = useState([]);
   const [currentFolder, setCurrentFolder] = useState(null);
@@ -78,6 +82,13 @@ export default function FileManager() {
     if (folder.allowCreate && folder.allowCreate.includes(userData?.uid)) return true;
     if (userData?.role === 'editor') return true;
     return false;
+  }
+
+  async function togglePinFile(fileId, isPinned) {
+    if (!uid || !schoolId) return;
+    await updateDoc(doc(db, `files_${schoolId}`, fileId), {
+      pinnedBy: isPinned ? arrayRemove(uid) : arrayUnion(uid)
+    });
   }
 
   useEffect(() => {
@@ -427,8 +438,15 @@ export default function FileManager() {
                 <div className="file-list">
                   {files
                     .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()))
-                    .map(f => (
-                    <div key={f.id} className="file-item" onClick={() => openFile(f)}
+                    .sort((a, b) => {
+                      const aPin = a.pinnedBy?.includes(uid) ? 0 : 1;
+                      const bPin = b.pinnedBy?.includes(uid) ? 0 : 1;
+                      return aPin - bPin;
+                    })
+                    .map(f => {
+                    const isPinned = f.pinnedBy?.includes(uid);
+                    return (
+                    <div key={f.id} className={`file-item ${isPinned ? 'file-item--pinned' : ''}`} onClick={() => openFile(f)}
                       onContextMenu={e => {
                         if (!canManage) return;
                         e.preventDefault();
@@ -444,6 +462,13 @@ export default function FileManager() {
                         </div>
                       </div>
                       <div className="file-actions" onClick={e => e.stopPropagation()}>
+                        <button
+                          className={`icon-btn ${isPinned ? 'icon-btn--pinned' : ''}`}
+                          title={isPinned ? 'הסר נעיצה' : 'נעץ'}
+                          onClick={() => togglePinFile(f.id, isPinned)}
+                        >
+                          <Pin size={14} style={isPinned ? { color: '#2563eb' } : undefined} />
+                        </button>
                         {f.url && (
                           <a href={f.url} target="_blank" rel="noopener noreferrer" className="icon-btn" title="הורדה">
                             <Download size={14} />
@@ -456,7 +481,8 @@ export default function FileManager() {
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   {files.length === 0 && (
                     <div className="empty-state">
                       <FileText size={32} className="empty-icon" />

@@ -12,11 +12,13 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  arrayUnion,
+  arrayRemove,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import Header from '../Layout/Header';
 import { createNotification, createNotifications } from '../../utils/notifications';
-import { Send, Search, Mail, Circle, Trash2, X, Shield, Megaphone, Users, MessageCircle, ImagePlus } from 'lucide-react';
+import { Send, Search, Mail, Circle, Trash2, X, Shield, Megaphone, Users, MessageCircle, ImagePlus, Pin } from 'lucide-react';
 import './Messages.css';
 
 const ROLE_LABELS_MSG = {
@@ -330,6 +332,13 @@ export default function Messages() {
     setConfirmDeleteMsg(null);
   }
 
+  async function togglePinConv(convId, isPinned) {
+    if (!uid) return;
+    await updateDoc(doc(db, 'conversations', convId), {
+      pinnedBy: isPinned ? arrayRemove(uid) : arrayUnion(uid)
+    });
+  }
+
   async function deleteConversation(conv) {
     if (!conv) return;
     try {
@@ -409,6 +418,10 @@ export default function Messages() {
     if (!searchConv.trim()) return true;
     const name = getOtherName(c).toLowerCase();
     return name.includes(searchConv.toLowerCase());
+  }).sort((a, b) => {
+    const aPin = a.pinnedBy?.includes(uid) ? 0 : 1;
+    const bPin = b.pinnedBy?.includes(uid) ? 0 : 1;
+    return aPin - bPin;
   });
 
   // Sort users: admins first, then alphabetical
@@ -532,10 +545,11 @@ export default function Messages() {
                 <div className="conv-list">
                   {filteredConversations.map(conv => {
                     const isUnread = conv.unreadBy?.includes(uid);
+                    const isPinned = conv.pinnedBy?.includes(uid);
                     return (
                       <div
                         key={conv.id}
-                        className={`conv-item ${activeConv?.id === conv.id ? 'conv-item--active' : ''} ${isUnread ? 'conv-item--unread' : ''}`}
+                        className={`conv-item ${activeConv?.id === conv.id ? 'conv-item--active' : ''} ${isUnread ? 'conv-item--unread' : ''} ${isPinned ? 'conv-item--pinned' : ''}`}
                         onClick={() => setActiveConv(conv)}
                       >
                         <div className="conv-avatar">{getInitial(conv)}</div>
@@ -549,6 +563,13 @@ export default function Messages() {
                           <span className="conv-last-msg">{conv.lastMessage || 'שיחה חדשה'}</span>
                         </div>
                         <div className="conv-item-actions">
+                          <button
+                            className={`icon-btn ${isPinned ? 'icon-btn--pinned' : ''}`}
+                            title={isPinned ? 'הסר נעיצה' : 'נעץ'}
+                            onClick={e => { e.stopPropagation(); togglePinConv(conv.id, isPinned); }}
+                          >
+                            <Pin size={13} style={isPinned ? { color: '#2563eb' } : undefined} />
+                          </button>
                           {isUnread && <Circle size={8} fill="#2563eb" className="conv-unread-dot" />}
                           {confirmDeleteConv === conv.id ? (
                             <div className="conv-delete-confirm" onClick={e => e.stopPropagation()}>

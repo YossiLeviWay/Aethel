@@ -11,11 +11,13 @@ import {
   deleteDoc,
   doc,
   orderBy,
-  getDocs
+  getDocs,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
 import ChatPanel from './ChatPanel';
-import { Plus, Trash2, MessageSquare, Clock, AlertTriangle, AlertCircle, ChevronDown, X, Search, Filter, Users, Edit3, Save } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Clock, AlertTriangle, AlertCircle, ChevronDown, X, Search, Filter, Users, Edit3, Save, Pin } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Tasks.css';
 
@@ -38,7 +40,8 @@ const ASSIGNEE_TYPES = {
 };
 
 export default function TaskBoard() {
-  const { userData, selectedSchool } = useAuth();
+  const { userData, selectedSchool, currentUser } = useAuth();
+  const uid = currentUser?.uid;
   const [tasks, setTasks] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [chatTask, setChatTask] = useState(null);
@@ -190,6 +193,13 @@ export default function TaskBoard() {
     await updateDoc(doc(db, `tasks_${schoolId}`, taskId), { status: newStatus });
   }
 
+  async function togglePinTask(taskId, isPinned) {
+    if (!uid || !schoolId) return;
+    await updateDoc(doc(db, `tasks_${schoolId}`, taskId), {
+      pinnedBy: isPinned ? arrayRemove(uid) : arrayUnion(uid)
+    });
+  }
+
   async function deleteTask(taskId) {
     if (!confirm('האם למחוק משימה זו?')) return;
     await deleteDoc(doc(db, `tasks_${schoolId}`, taskId));
@@ -235,6 +245,10 @@ export default function TaskBoard() {
       );
     }
     return true;
+  }).sort((a, b) => {
+    const aPin = a.pinnedBy?.includes(uid) ? 0 : 1;
+    const bPin = b.pinnedBy?.includes(uid) ? 0 : 1;
+    return aPin - bPin;
   });
 
   return (
@@ -475,9 +489,10 @@ export default function TaskBoard() {
             const PrioIcon = prio.icon;
             const overdue = task.status !== 'done' && isOverdue(task.dueDate);
             const assigneeDisplay = getAssigneeDisplay(task);
+            const isPinned = task.pinnedBy?.includes(uid);
 
             return (
-              <div key={task.id} className={`task-row ${overdue ? 'task-row--overdue' : ''}`}>
+              <div key={task.id} className={`task-row ${overdue ? 'task-row--overdue' : ''} ${isPinned ? 'task-row--pinned' : ''}`}>
                 <div className="task-priority" style={{ background: prio.bg }}>
                   <PrioIcon size={14} style={{ color: prio.color }} />
                 </div>
@@ -522,6 +537,13 @@ export default function TaskBoard() {
                 </div>
 
                 <div className="task-actions">
+                  <button
+                    className={`icon-btn ${isPinned ? 'icon-btn--pinned' : ''}`}
+                    title={isPinned ? 'הסר נעיצה' : 'נעץ'}
+                    onClick={() => togglePinTask(task.id, isPinned)}
+                  >
+                    <Pin size={15} style={isPinned ? { color: '#2563eb' } : undefined} />
+                  </button>
                   <button
                     className="icon-btn"
                     title="עריכה"
