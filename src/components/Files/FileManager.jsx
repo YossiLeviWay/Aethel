@@ -26,7 +26,7 @@ import {
   Trash2,
   FileText,
   Folder,
-  ArrowRight,
+  FolderOpen,
   Download,
   Lock,
   X,
@@ -34,9 +34,12 @@ import {
   FileEdit,
   Plus,
   Save,
-  ArrowLeft,
   Search,
-  Pin
+  Pin,
+  ChevronDown,
+  ChevronLeft,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Files.css';
@@ -46,7 +49,6 @@ export default function FileManager() {
   const uid = currentUser?.uid;
   const [folders, setFolders] = useState([]);
   const [files, setFiles] = useState([]);
-  const [currentFolder, setCurrentFolder] = useState(null);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [folderVisibility, setFolderVisibility] = useState('all');
@@ -56,28 +58,29 @@ export default function FileManager() {
   const [editingFile, setEditingFile] = useState(null);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [newFileName, setNewFileName] = useState('');
-  const [newFileType, setNewFileType] = useState(null); // 'spreadsheet' | 'document'
+  const [newFileType, setNewFileType] = useState(null);
   const [fileSaving, setFileSaving] = useState(false);
   const [fileSearch, setFileSearch] = useState('');
-  const [permMenu, setPermMenu] = useState(null); // { type, id, name, position }
+  const [permMenu, setPermMenu] = useState(null);
+  const [expandedFolders, setExpandedFolders] = useState({});
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [createInFolder, setCreateInFolder] = useState(null); // folder id for new file creation
 
   const schoolId = selectedSchool || userData?.schoolId;
   const canManage = isPrincipal() || isGlobalAdmin();
 
-  // Check permissions for current user
   function userCanAccessFolder(folder) {
     if (canManage) return true;
     if (folder.visibility === 'all') return true;
     if (folder.visibility === 'principal_only') return false;
-    // Check specific permissions
     if (folder.allowedUsers && folder.allowedUsers.includes(userData?.uid)) return true;
     return folder.visibility === 'all';
   }
 
   function userCanCreateFiles() {
     if (canManage) return true;
-    // Check if the current folder allows this user to create files
-    const folder = folders.find(f => f.id === currentFolder);
+    const folder = folders.find(f => f.id === selectedFolder);
     if (!folder) return false;
     if (folder.allowCreate && folder.allowCreate.includes(userData?.uid)) return true;
     if (userData?.role === 'editor') return true;
@@ -87,6 +90,13 @@ export default function FileManager() {
   async function togglePinFile(fileId, isPinned) {
     if (!uid || !schoolId) return;
     await updateDoc(doc(db, `files_${schoolId}`, fileId), {
+      pinnedBy: isPinned ? arrayRemove(uid) : arrayUnion(uid)
+    });
+  }
+
+  async function togglePinFolder(folderId, isPinned) {
+    if (!uid || !schoolId) return;
+    await updateDoc(doc(db, `folders_${schoolId}`, folderId), {
       pinnedBy: isPinned ? arrayRemove(uid) : arrayUnion(uid)
     });
   }
@@ -101,18 +111,15 @@ export default function FileManager() {
     return unsub;
   }, [schoolId, canManage, userData]);
 
+  // Load all files for all folders
   useEffect(() => {
-    if (!schoolId || !currentFolder) { setFiles([]); return; }
-    const q = query(
-      collection(db, `files_${schoolId}`),
-      where('folderId', '==', currentFolder),
-      orderBy('createdAt', 'desc')
-    );
+    if (!schoolId) return;
+    const q = query(collection(db, `files_${schoolId}`), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, (snap) => {
       setFiles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return unsub;
-  }, [schoolId, currentFolder]);
+  }, [schoolId]);
 
   async function createFolder(e) {
     e.preventDefault();
@@ -133,12 +140,12 @@ export default function FileManager() {
     }
   }
 
-  async function handleUpload(e) {
+  async function handleUpload(e, folderId) {
     const file = e.target.files[0];
-    if (!file || !currentFolder || !schoolId) return;
+    if (!file || !folderId || !schoolId) return;
     setUploading(true);
     try {
-      const storageRef = ref(storage, `schools/${schoolId}/${currentFolder}/${file.name}`);
+      const storageRef = ref(storage, `schools/${schoolId}/${folderId}/${file.name}`);
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       await addDoc(collection(db, `files_${schoolId}`), {
@@ -147,8 +154,8 @@ export default function FileManager() {
         size: file.size,
         type: file.type,
         fileType: 'upload',
-        folderId: currentFolder,
-        storagePath: `schools/${schoolId}/${currentFolder}/${file.name}`,
+        folderId: folderId,
+        storagePath: `schools/${schoolId}/${folderId}/${file.name}`,
         uploadedBy: userData?.fullName || '',
         createdAt: new Date().toISOString()
       });
@@ -161,17 +168,18 @@ export default function FileManager() {
 
   async function createInAppFile(e) {
     e.preventDefault();
-    if (!newFileName.trim() || !newFileType || !currentFolder || !schoolId) return;
+    const folderId = createInFolder || selectedFolder;
+    if (!newFileName.trim() || !newFileType || !folderId || !schoolId) return;
     try {
       const initialContent = newFileType === 'spreadsheet'
-        ? JSON.stringify({ columns: 5, rows: 10, cells: {} })
+        ? JSON.stringify({ columns: 5, rows: 10, cells: {}, headers: {}, columnWidths: {}, rowHeights: {} })
         : '<p></p>';
 
       const newDoc = await addDoc(collection(db, `files_${schoolId}`), {
         name: newFileName.trim(),
         fileType: newFileType,
         content: initialContent,
-        folderId: currentFolder,
+        folderId: folderId,
         size: 0,
         type: newFileType === 'spreadsheet' ? 'application/x-spreadsheet' : 'text/html',
         uploadedBy: userData?.fullName || '',
@@ -180,7 +188,7 @@ export default function FileManager() {
       setNewFileName('');
       setNewFileType(null);
       setShowCreateMenu(false);
-      // Open the new file for editing
+      setCreateInFolder(null);
       setEditingFile({ id: newDoc.id, name: newFileName.trim(), fileType: newFileType, content: initialContent });
     } catch (err) {
       alert('שגיאה ביצירת קובץ: ' + err.message);
@@ -216,7 +224,7 @@ export default function FileManager() {
       await deleteDoc(doc(db, `files_${schoolId}`, fileDoc.id));
     }
     await deleteDoc(doc(db, `folders_${schoolId}`, folderId));
-    if (currentFolder === folderId) setCurrentFolder(null);
+    if (selectedFolder === folderId) setSelectedFolder(null);
   }
 
   async function deleteFile(fileItem) {
@@ -243,68 +251,156 @@ export default function FileManager() {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
-  function getFileIcon(file) {
-    if (file.fileType === 'spreadsheet') return <Table2 size={18} className="file-icon file-icon--sheet" />;
-    if (file.fileType === 'document') return <FileEdit size={18} className="file-icon file-icon--doc" />;
-    return <FileText size={18} className="file-icon" />;
+  function getFileIcon(file, size = 15) {
+    if (file.fileType === 'spreadsheet') return <Table2 size={size} className="file-icon file-icon--sheet" />;
+    if (file.fileType === 'document') return <FileEdit size={size} className="file-icon file-icon--doc" />;
+    return <FileText size={size} className="file-icon" />;
   }
 
-  const currentFolderData = folders.find(f => f.id === currentFolder);
+  function toggleFolder(folderId) {
+    setExpandedFolders(prev => ({ ...prev, [folderId]: !prev[folderId] }));
+    setSelectedFolder(folderId);
+  }
 
-  // If editing a file, show the editor
-  if (editingFile) {
-    return (
-      <div className="page">
-        <Header title="קבצים ותיקיות" />
-        <div className="file-editor-header">
-          <button className="btn btn-secondary btn-sm" onClick={() => setEditingFile(null)}>
-            <ArrowLeft size={14} />
-            חזרה
-          </button>
-          <span className="file-editor-name">
-            {editingFile.fileType === 'spreadsheet' ? <Table2 size={16} /> : <FileEdit size={16} />}
-            {editingFile.name}
-          </span>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => saveFileContent(editingFile.content)}
-            disabled={fileSaving}
+  // Sort folders: pinned first, then alphabetical
+  const sortedFolders = [...folders]
+    .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()) ||
+      files.some(file => file.folderId === f.id && file.name.toLowerCase().includes(fileSearch.toLowerCase())))
+    .sort((a, b) => {
+      const aPin = a.pinnedBy?.includes(uid) ? 0 : 1;
+      const bPin = b.pinnedBy?.includes(uid) ? 0 : 1;
+      if (aPin !== bPin) return aPin - bPin;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+  const pinnedFolders = sortedFolders.filter(f => f.pinnedBy?.includes(uid));
+  const unpinnedFolders = sortedFolders.filter(f => !f.pinnedBy?.includes(uid));
+
+  function getFilesForFolder(folderId) {
+    return files
+      .filter(f => f.folderId === folderId)
+      .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()))
+      .sort((a, b) => {
+        const aPin = a.pinnedBy?.includes(uid) ? 0 : 1;
+        const bPin = b.pinnedBy?.includes(uid) ? 0 : 1;
+        return aPin - bPin;
+      });
+  }
+
+  // Get pinned files across all folders
+  const pinnedFiles = files.filter(f => f.pinnedBy?.includes(uid))
+    .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()));
+
+  function renderFolderTree(folderList) {
+    return folderList.map(folder => {
+      const isExpanded = expandedFolders[folder.id];
+      const folderFiles = getFilesForFolder(folder.id);
+      const isPinnedFolder = folder.pinnedBy?.includes(uid);
+      const isSelected = selectedFolder === folder.id;
+
+      return (
+        <div key={folder.id} className="tree-folder">
+          <div
+            className={`tree-folder-item ${isSelected ? 'tree-folder-item--active' : ''}`}
+            onClick={() => toggleFolder(folder.id)}
+            onContextMenu={e => {
+              if (!canManage) return;
+              e.preventDefault();
+              setPermMenu({ type: 'folder', id: folder.id, name: folder.name, position: { x: e.clientX, y: e.clientY } });
+            }}
           >
-            <Save size={14} />
-            {fileSaving ? 'שומר...' : 'שמירה'}
-          </button>
-        </div>
-        <div className="file-editor-body">
-          {editingFile.fileType === 'spreadsheet' ? (
-            <SpreadsheetEditor
-              data={typeof editingFile.content === 'string' ? JSON.parse(editingFile.content) : editingFile.content}
-              onChange={(newData) => setEditingFile(prev => ({ ...prev, content: JSON.stringify(newData) }))}
-            />
-          ) : (
-            <DocumentEditor
-              content={editingFile.content || ''}
-              onChange={(newContent) => setEditingFile(prev => ({ ...prev, content: newContent }))}
-            />
+            <span className="tree-chevron">
+              {isExpanded ? <ChevronDown size={12} /> : <ChevronLeft size={12} />}
+            </span>
+            {isExpanded ? <FolderOpen size={15} /> : <Folder size={15} />}
+            <span className="tree-folder-name">{folder.name}</span>
+            {folder.visibility === 'principal_only' && <Lock size={10} className="folder-lock" />}
+            <span className="tree-folder-count">{folderFiles.length}</span>
+            <div className="tree-item-actions" onClick={e => e.stopPropagation()}>
+              <button
+                className={`tree-pin-btn ${isPinnedFolder ? 'tree-pin-btn--active' : ''}`}
+                title={isPinnedFolder ? 'הסר נעיצה' : 'נעץ תיקייה'}
+                onClick={() => togglePinFolder(folder.id, isPinnedFolder)}
+              >
+                <Pin size={11} style={isPinnedFolder ? { color: '#2563eb' } : undefined} />
+              </button>
+              {canManage && (
+                <button
+                  className="tree-delete-btn"
+                  onClick={() => deleteFolder(folder.id)}
+                  title="מחיקת תיקייה"
+                >
+                  <Trash2 size={11} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {isExpanded && (
+            <div className="tree-folder-children">
+              {folderFiles.map(f => {
+                const isPinned = f.pinnedBy?.includes(uid);
+                return (
+                  <div
+                    key={f.id}
+                    className={`tree-file-item ${editingFile?.id === f.id ? 'tree-file-item--active' : ''} ${isPinned ? 'tree-file-item--pinned' : ''}`}
+                    onClick={() => openFile(f)}
+                    onContextMenu={e => {
+                      if (!canManage) return;
+                      e.preventDefault();
+                      setPermMenu({ type: 'file', id: f.id, name: f.name, position: { x: e.clientX, y: e.clientY } });
+                    }}
+                  >
+                    {getFileIcon(f, 13)}
+                    <span className="tree-file-name">{f.name}</span>
+                    <div className="tree-item-actions" onClick={e => e.stopPropagation()}>
+                      <button
+                        className={`tree-pin-btn ${isPinned ? 'tree-pin-btn--active' : ''}`}
+                        title={isPinned ? 'הסר נעיצה' : 'נעץ'}
+                        onClick={() => togglePinFile(f.id, isPinned)}
+                      >
+                        <Pin size={10} style={isPinned ? { color: '#2563eb' } : undefined} />
+                      </button>
+                      {f.url && (
+                        <a href={f.url} target="_blank" rel="noopener noreferrer" className="tree-action-btn" title="הורדה">
+                          <Download size={10} />
+                        </a>
+                      )}
+                      {canManage && (
+                        <button className="tree-delete-btn" onClick={() => deleteFile(f)} title="מחיקה">
+                          <Trash2 size={10} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {folderFiles.length === 0 && (
+                <div className="tree-empty">ריק</div>
+              )}
+            </div>
           )}
         </div>
-      </div>
-    );
+      );
+    });
   }
 
   return (
     <div className="page">
       <Header title="קבצים ותיקיות" />
       <div className="page-content">
-        <div className="files-layout">
-          {/* Folder sidebar */}
-          <div className="folders-panel">
-            <div className="folders-header">
-              <h3>תיקיות</h3>
-              {canManage && (
-                <button className="icon-btn" onClick={() => setShowNewFolder(true)} title="תיקייה חדשה">
-                  <FolderPlus size={16} />
-                </button>
-              )}
+        <div className={`files-layout ${fullscreen ? 'files-layout--fullscreen' : ''}`}>
+          {/* Right panel - File tree */}
+          <div className="files-tree-panel">
+            <div className="tree-panel-header">
+              <h3>תיקיות וקבצים</h3>
+              <div className="tree-panel-actions">
+                {canManage && (
+                  <button className="icon-btn" onClick={() => setShowNewFolder(true)} title="תיקייה חדשה">
+                    <FolderPlus size={15} />
+                  </button>
+                )}
+              </div>
             </div>
 
             {showNewFolder && (
@@ -321,14 +417,12 @@ export default function FileManager() {
                 </select>
                 <div className="form-actions">
                   <button type="submit" className="btn btn-primary btn-sm">צור</button>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowNewFolder(false)}>
-                    ביטול
-                  </button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowNewFolder(false)}>ביטול</button>
                 </div>
               </form>
             )}
 
-            <div style={{ padding: '0.35rem 0.35rem 0' }}>
+            <div style={{ padding: '0.35rem 0.5rem 0' }}>
               <div className="search-bar" style={{ minWidth: 'auto' }}>
                 <Search size={12} />
                 <input
@@ -340,55 +434,118 @@ export default function FileManager() {
               </div>
             </div>
 
-            <div className="folder-list">
-              {folders
-                .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()))
-                .map(f => (
-                <div
-                  key={f.id}
-                  className={`folder-item ${currentFolder === f.id ? 'folder-item--active' : ''}`}
-                  onClick={() => setCurrentFolder(f.id)}
-                  onContextMenu={e => {
-                    if (!canManage) return;
-                    e.preventDefault();
-                    setPermMenu({ type: 'folder', id: f.id, name: f.name, position: { x: e.clientX, y: e.clientY } });
-                  }}
-                >
-                  <Folder size={16} />
-                  <span className="folder-name">{f.name}</span>
-                  {f.visibility === 'principal_only' && <Lock size={12} className="folder-lock" />}
-                  {canManage && (
-                    <button
-                      className="folder-delete"
-                      onClick={e => { e.stopPropagation(); deleteFolder(f.id); }}
+            <div className="tree-list">
+              {/* Pinned section */}
+              {(pinnedFolders.length > 0 || pinnedFiles.length > 0) && (
+                <>
+                  <div className="tree-section-header">
+                    <Pin size={11} />
+                    <span>נעוצים</span>
+                  </div>
+                  {renderFolderTree(pinnedFolders)}
+                  {pinnedFiles.filter(f => !pinnedFolders.some(pf => pf.id === f.folderId)).map(f => (
+                    <div
+                      key={`pinned-${f.id}`}
+                      className={`tree-file-item tree-file-item--pinned-standalone ${editingFile?.id === f.id ? 'tree-file-item--active' : ''}`}
+                      onClick={() => openFile(f)}
                     >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
+                      {getFileIcon(f, 13)}
+                      <span className="tree-file-name">{f.name}</span>
+                      <div className="tree-item-actions" onClick={e => e.stopPropagation()}>
+                        <button
+                          className="tree-pin-btn tree-pin-btn--active"
+                          title="הסר נעיצה"
+                          onClick={() => togglePinFile(f.id, true)}
+                        >
+                          <Pin size={10} style={{ color: '#2563eb' }} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="tree-section-divider" />
+                </>
+              )}
+
+              {/* All folders */}
+              {unpinnedFolders.length > 0 && (pinnedFolders.length > 0 || pinnedFiles.length > 0) && (
+                <div className="tree-section-header">
+                  <Folder size={11} />
+                  <span>כל התיקיות</span>
                 </div>
-              ))}
-              {folders.length === 0 && (
-                <p className="folders-empty">אין תיקיות</p>
+              )}
+              {renderFolderTree(unpinnedFolders)}
+
+              {sortedFolders.length === 0 && (
+                <div className="tree-empty-state">
+                  <Folder size={24} className="empty-icon" />
+                  <p>אין תיקיות</p>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Files area */}
-          <div className="files-panel">
-            {currentFolder ? (
-              <>
-                <div className="files-header">
-                  <div className="files-breadcrumb">
-                    <button className="breadcrumb-link" onClick={() => setCurrentFolder(null)}>תיקיות</button>
-                    <ArrowRight size={12} />
-                    <span>{currentFolderData?.name}</span>
+          {/* Left panel - File viewer */}
+          <div className="files-viewer-panel">
+            {editingFile ? (
+              <div className="file-viewer-content">
+                <div className="file-editor-header">
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setEditingFile(null); setFullscreen(false); }}>
+                    <X size={14} />
+                    סגור
+                  </button>
+                  <span className="file-editor-name">
+                    {editingFile.fileType === 'spreadsheet' ? <Table2 size={16} /> : <FileEdit size={16} />}
+                    {editingFile.name}
+                  </span>
+                  <div className="file-editor-actions">
+                    {editingFile.fileType !== 'spreadsheet' && (
+                      <button
+                        className="icon-btn"
+                        onClick={() => setFullscreen(!fullscreen)}
+                        title={fullscreen ? 'יציאה ממסך מלא' : 'מסך מלא'}
+                      >
+                        {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                      </button>
+                    )}
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => saveFileContent(editingFile.content)}
+                      disabled={fileSaving}
+                    >
+                      <Save size={14} />
+                      {fileSaving ? 'שומר...' : 'שמירה'}
+                    </button>
                   </div>
-                  <div className="files-header-actions">
+                </div>
+                <div className="file-editor-body">
+                  {editingFile.fileType === 'spreadsheet' ? (
+                    <SpreadsheetEditor
+                      data={typeof editingFile.content === 'string' ? JSON.parse(editingFile.content) : editingFile.content}
+                      onChange={(newData) => setEditingFile(prev => ({ ...prev, content: JSON.stringify(newData) }))}
+                      onToggleFullscreen={() => setFullscreen(!fullscreen)}
+                      isFullscreen={fullscreen}
+                    />
+                  ) : (
+                    <DocumentEditor
+                      content={editingFile.content || ''}
+                      onChange={(newContent) => setEditingFile(prev => ({ ...prev, content: newContent }))}
+                    />
+                  )}
+                </div>
+              </div>
+            ) : selectedFolder ? (
+              <div className="file-viewer-content">
+                <div className="viewer-header">
+                  <div className="viewer-folder-info">
+                    <FolderOpen size={18} />
+                    <h3>{folders.find(f => f.id === selectedFolder)?.name || 'תיקייה'}</h3>
+                  </div>
+                  <div className="viewer-header-actions">
                     {userCanCreateFiles() && (
                       <div className="create-file-wrap">
                         <button
                           className="btn btn-primary btn-sm"
-                          onClick={() => setShowCreateMenu(!showCreateMenu)}
+                          onClick={() => { setShowCreateMenu(!showCreateMenu); setCreateInFolder(selectedFolder); }}
                         >
                           <Plus size={14} />
                           קובץ חדש
@@ -410,7 +567,7 @@ export default function FileManager() {
                     <label className="upload-btn">
                       <Upload size={14} />
                       {uploading ? 'מעלה...' : 'העלאת קובץ'}
-                      <input type="file" hidden onChange={handleUpload} disabled={uploading} />
+                      <input type="file" hidden onChange={e => handleUpload(e, selectedFolder)} disabled={uploading} />
                     </label>
                   </div>
                 </div>
@@ -435,55 +592,42 @@ export default function FileManager() {
                   </form>
                 )}
 
-                <div className="file-list">
-                  {files
-                    .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()))
-                    .sort((a, b) => {
-                      const aPin = a.pinnedBy?.includes(uid) ? 0 : 1;
-                      const bPin = b.pinnedBy?.includes(uid) ? 0 : 1;
-                      return aPin - bPin;
-                    })
-                    .map(f => {
+                <div className="file-grid">
+                  {getFilesForFolder(selectedFolder).map(f => {
                     const isPinned = f.pinnedBy?.includes(uid);
                     return (
-                    <div key={f.id} className={`file-item ${isPinned ? 'file-item--pinned' : ''}`} onClick={() => openFile(f)}
-                      onContextMenu={e => {
-                        if (!canManage) return;
-                        e.preventDefault();
-                        setPermMenu({ type: 'file', id: f.id, name: f.name, position: { x: e.clientX, y: e.clientY } });
-                      }}
-                    >
-                      {getFileIcon(f)}
-                      <div className="file-info">
-                        <div className="file-name">{f.name}</div>
-                        <div className="file-meta">
-                          {f.fileType === 'spreadsheet' ? 'גיליון' : f.fileType === 'document' ? 'מסמך' : formatSize(f.size)}
-                          {' · '}{f.uploadedBy}
+                      <div key={f.id} className={`file-card ${isPinned ? 'file-card--pinned' : ''}`} onClick={() => openFile(f)}>
+                        <div className="file-card-icon">{getFileIcon(f, 28)}</div>
+                        <div className="file-card-info">
+                          <div className="file-card-name">{f.name}</div>
+                          <div className="file-card-meta">
+                            {f.fileType === 'spreadsheet' ? 'גיליון' : f.fileType === 'document' ? 'מסמך' : formatSize(f.size)}
+                            {' · '}{f.uploadedBy}
+                          </div>
+                        </div>
+                        <div className="file-card-actions" onClick={e => e.stopPropagation()}>
+                          <button
+                            className={`tree-pin-btn ${isPinned ? 'tree-pin-btn--active' : ''}`}
+                            title={isPinned ? 'הסר נעיצה' : 'נעץ'}
+                            onClick={() => togglePinFile(f.id, isPinned)}
+                          >
+                            <Pin size={13} style={isPinned ? { color: '#2563eb' } : undefined} />
+                          </button>
+                          {f.url && (
+                            <a href={f.url} target="_blank" rel="noopener noreferrer" className="icon-btn" title="הורדה">
+                              <Download size={13} />
+                            </a>
+                          )}
+                          {canManage && (
+                            <button className="icon-btn icon-btn--danger" onClick={() => deleteFile(f)} title="מחיקה">
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <div className="file-actions" onClick={e => e.stopPropagation()}>
-                        <button
-                          className={`icon-btn ${isPinned ? 'icon-btn--pinned' : ''}`}
-                          title={isPinned ? 'הסר נעיצה' : 'נעץ'}
-                          onClick={() => togglePinFile(f.id, isPinned)}
-                        >
-                          <Pin size={14} style={isPinned ? { color: '#2563eb' } : undefined} />
-                        </button>
-                        {f.url && (
-                          <a href={f.url} target="_blank" rel="noopener noreferrer" className="icon-btn" title="הורדה">
-                            <Download size={14} />
-                          </a>
-                        )}
-                        {canManage && (
-                          <button className="icon-btn icon-btn--danger" onClick={() => deleteFile(f)} title="מחיקה">
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
                     );
                   })}
-                  {files.length === 0 && (
+                  {getFilesForFolder(selectedFolder).length === 0 && (
                     <div className="empty-state">
                       <FileText size={32} className="empty-icon" />
                       <p>אין קבצים בתיקייה זו</p>
@@ -491,11 +635,11 @@ export default function FileManager() {
                     </div>
                   )}
                 </div>
-              </>
+              </div>
             ) : (
-              <div className="empty-state">
+              <div className="empty-state" style={{ height: '100%' }}>
                 <Folder size={40} className="empty-icon" />
-                <p>בחרו תיקייה מהרשימה</p>
+                <p>בחרו תיקייה או קובץ מהעץ</p>
               </div>
             )}
           </div>
