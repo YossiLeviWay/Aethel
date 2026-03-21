@@ -4,7 +4,7 @@ import { db } from '../../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import Header from '../Layout/Header';
 import { Save, User, Check } from 'lucide-react';
-import { AVATAR_OPTIONS } from '../../data/avatars';
+import { AVATAR_OPTIONS, AVATAR_ICON_PATHS } from '../../data/avatars';
 import '../Gantt/Gantt.css';
 import './Settings.css';
 
@@ -84,7 +84,13 @@ export default function Settings() {
                     onClick={() => { setSelectedAvatar(avatar.id); setSaved(false); }}
                     title={avatar.name}
                   >
-                    {userData?.fullName?.charAt(0) || '?'}
+                    {avatar.icon && AVATAR_ICON_PATHS[avatar.icon] ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d={AVATAR_ICON_PATHS[avatar.icon]} />
+                      </svg>
+                    ) : (
+                      userData?.fullName?.charAt(0) || '?'
+                    )}
                     {selectedAvatar === avatar.id && (
                       <div className="avatar-check">
                         <Check size={10} />

@@ -161,6 +161,7 @@ export default function ExcelWriter() {
   const [fullscreen, setFullscreen] = useState(false);
   const [sheetsCollapsed, setSheetsCollapsed] = useState(false);
   const tableRef = useRef(null);
+  const contextMenuRef = useRef(null);
 
   const PRESET_COLORS = [
     { label: 'לבן', value: '#ffffff' },
@@ -718,28 +719,27 @@ export default function ExcelWriter() {
     setEditingCell({ ri, ci });
     setFormulaBar(sheetData.rows[ri]?.[ci] || '');
     setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
+    // Set initial position at click; useEffect will reposition after render
+    setContextMenu({ x: e.clientX, y: e.clientY, ri, ci });
+  }
 
-    const menuWidth = 200;
-    const menuHeight = 420;
+  // Reposition context menu after render to prevent overflow
+  useEffect(() => {
+    if (!contextMenu || !contextMenuRef.current) return;
+    const el = contextMenuRef.current;
+    const rect = el.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    let x = e.clientX;
-    let y = e.clientY;
-
-    // If menu would overflow right edge, position from left
-    if (x + menuWidth > vw) {
-      x = vw - menuWidth - 8;
-    }
-    // If menu would overflow bottom edge, position upward
-    if (y + menuHeight > vh) {
-      y = vh - menuHeight - 8;
-    }
-    // Ensure not negative
+    let { x, y } = contextMenu;
+    if (x + rect.width > vw) x = vw - rect.width - 8;
+    if (y + rect.height > vh) y = vh - rect.height - 8;
     if (x < 4) x = 4;
     if (y < 4) y = 4;
-
-    setContextMenu({ x, y, ri, ci });
-  }
+    if (x !== contextMenu.x || y !== contextMenu.y) {
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+    }
+  }, [contextMenu]);
 
   function closeContextMenu() {
     setContextMenu(null);
@@ -1260,6 +1260,7 @@ export default function ExcelWriter() {
         {/* Right-click context menu */}
         {contextMenu && (
           <div
+            ref={contextMenuRef}
             className="cell-context-menu"
             style={{ top: contextMenu.y, left: contextMenu.x }}
             onClick={e => e.stopPropagation()}

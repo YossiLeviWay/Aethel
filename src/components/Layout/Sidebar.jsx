@@ -35,7 +35,7 @@ import {
   UserPlus,
   AlertCircle
 } from 'lucide-react';
-import { AVATAR_OPTIONS } from '../../data/avatars';
+import { AVATAR_OPTIONS, AVATAR_ICON_PATHS } from '../../data/avatars';
 import './Layout.css';
 
 const NAV_ITEMS = [
@@ -365,7 +365,13 @@ export default function Sidebar() {
                 color: avatarOption.textColor
               } : undefined}
             >
-              {userData.fullName?.charAt(0) || '?'}
+              {avatarOption?.icon && AVATAR_ICON_PATHS[avatarOption.icon] ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d={AVATAR_ICON_PATHS[avatarOption.icon]} />
+                </svg>
+              ) : (
+                userData.fullName?.charAt(0) || '?'
+              )}
             </div>
             <div className="sidebar-user-info">
               <span className="sidebar-user-name">{userData.fullName}</span>

@@ -648,6 +648,141 @@
   font-weight: 600;
 }
 
+/* ===== Announcement Compose Form ===== */
+.new-announcement-panel {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.new-announcement-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.announcement-target {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.announcement-target label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.announcement-target select {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-family: 'Inter', sans-serif;
+  background: #fff;
+  color: #1e293b;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.announcement-target select:focus {
+  border-color: #2563eb;
+}
+
+.new-announcement-panel textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-family: 'Inter', sans-serif;
+  background: #fff;
+  color: #1e293b;
+  resize: vertical;
+  min-height: 70px;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.new-announcement-panel textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.announcement-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ===== Announcement Items ===== */
+.announcement-item {
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.12s;
+}
+
+.announcement-item:hover {
+  background: #fafbfc;
+}
+
+.announcement-item:last-child {
+  border-bottom: none;
+}
+
+.announcement-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.announcement-sender {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #2563eb;
+  font-size: 0.78rem;
+}
+
+.announcement-sender-name {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.announcement-target-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 0.12rem 0.45rem;
+  border-radius: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.announcement-text {
+  font-size: 0.82rem;
+  color: #334155;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  margin-bottom: 0.25rem;
+}
+
+.announcement-time {
+  font-size: 0.68rem;
+  color: #94a3b8;
+}
+
 @media (max-width: 768px) {
   .messages-layout {
     flex-direction: column;
