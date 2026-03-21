@@ -11,10 +11,12 @@ import {
   query,
   orderBy,
   where,
-  getDocs
+  getDocs,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type, Scissors, Copy, Clipboard, ClipboardPaste, RotateCcw, ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ArrowLeftToLine, Eraser, Merge, SplitSquareHorizontal, Paintbrush, Palette, Users, Edit3, Share2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type, Scissors, Copy, Clipboard, ClipboardPaste, RotateCcw, ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ArrowLeftToLine, Eraser, Merge, SplitSquareHorizontal, Paintbrush, Palette, Users, Edit3, Share2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pin } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './DataMapper.css';
 
@@ -127,7 +129,8 @@ function evaluateFormula(value, rows) {
 }
 
 export default function ExcelWriter() {
-  const { userData, selectedSchool } = useAuth();
+  const { userData, currentUser, selectedSchool } = useAuth();
+  const uid = currentUser?.uid;
   const [sheets, setSheets] = useState([]);
   const [activeSheet, setActiveSheet] = useState(null);
   const [sheetData, setSheetData] = useState({ columns: [], rows: [] });
@@ -161,6 +164,7 @@ export default function ExcelWriter() {
   const [fullscreen, setFullscreen] = useState(false);
   const [sheetsCollapsed, setSheetsCollapsed] = useState(false);
   const tableRef = useRef(null);
+  const contextMenuRef = useRef(null);
 
   const PRESET_COLORS = [
     { label: 'לבן', value: '#ffffff' },
@@ -264,6 +268,13 @@ export default function ExcelWriter() {
       alert('שגיאה בשמירה: ' + err.message);
     }
     setSaving(false);
+  }
+
+  async function togglePinSheet(sheetId, isPinned) {
+    if (!uid || !schoolId) return;
+    await updateDoc(doc(db, `sheets_${schoolId}`, sheetId), {
+      pinnedBy: isPinned ? arrayRemove(uid) : arrayUnion(uid)
+    });
   }
 
   async function deleteSheet(sheetId) {
@@ -718,28 +729,27 @@ export default function ExcelWriter() {
     setEditingCell({ ri, ci });
     setFormulaBar(sheetData.rows[ri]?.[ci] || '');
     setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
+    // Set initial position at click; useEffect will reposition after render
+    setContextMenu({ x: e.clientX, y: e.clientY, ri, ci });
+  }
 
-    const menuWidth = 200;
-    const menuHeight = 420;
+  // Reposition context menu after render to prevent overflow
+  useEffect(() => {
+    if (!contextMenu || !contextMenuRef.current) return;
+    const el = contextMenuRef.current;
+    const rect = el.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    let x = e.clientX;
-    let y = e.clientY;
-
-    // If menu would overflow right edge, position from left
-    if (x + menuWidth > vw) {
-      x = vw - menuWidth - 8;
-    }
-    // If menu would overflow bottom edge, position upward
-    if (y + menuHeight > vh) {
-      y = vh - menuHeight - 8;
-    }
-    // Ensure not negative
+    let { x, y } = contextMenu;
+    if (x + rect.width > vw) x = vw - rect.width - 8;
+    if (y + rect.height > vh) y = vh - rect.height - 8;
     if (x < 4) x = 4;
     if (y < 4) y = 4;
-
-    setContextMenu({ x, y, ri, ci });
-  }
+    if (x !== contextMenu.x || y !== contextMenu.y) {
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+    }
+  }, [contextMenu]);
 
   function closeContextMenu() {
     setContextMenu(null);
@@ -961,6 +971,10 @@ export default function ExcelWriter() {
   const filteredSheets = sheets.filter(s => {
     if (!searchQuery.trim()) return true;
     return s.name.toLowerCase().includes(searchQuery.toLowerCase());
+  }).sort((a, b) => {
+    const aPin = a.pinnedBy?.includes(uid) ? 0 : 1;
+    const bPin = b.pinnedBy?.includes(uid) ? 0 : 1;
+    return aPin - bPin;
   });
 
   const selectedNums = getSelectedNumbers();
@@ -992,10 +1006,12 @@ export default function ExcelWriter() {
               </div>
             </div>
             <div className="sheet-list">
-              {filteredSheets.map(s => (
+              {filteredSheets.map(s => {
+                const isPinned = s.pinnedBy?.includes(uid);
+                return (
                 <div
                   key={s.id}
-                  className={`sheet-item ${activeSheet === s.id ? 'sheet-item--active' : ''}`}
+                  className={`sheet-item ${activeSheet === s.id ? 'sheet-item--active' : ''} ${isPinned ? 'sheet-item--pinned' : ''}`}
                   onClick={() => { if (renamingSheetId !== s.id) setActiveSheet(s.id); }}
                   onContextMenu={e => handleSheetContextMenu(e, s.id)}
                 >
@@ -1017,9 +1033,11 @@ export default function ExcelWriter() {
                     <span className="sheet-name">{s.name}</span>
                   )}
                   {s.sharedWith?.length > 0 && <Users size={11} style={{ color: '#94a3b8', flexShrink: 0 }} />}
+                  <button className={`icon-btn ${isPinned ? 'icon-btn--pinned' : ''}`} title={isPinned ? 'הסר נעיצה' : 'נעץ'} onClick={e => { e.stopPropagation(); togglePinSheet(s.id, isPinned); }}><Pin size={12} style={isPinned ? { color: '#2563eb' } : undefined} /></button>
                   <button className="sheet-delete" onClick={e => { e.stopPropagation(); deleteSheet(s.id); }}><Trash2 size={12} /></button>
                 </div>
-              ))}
+                );
+              })}
               {filteredSheets.length === 0 && <p className="sheets-empty">{searchQuery ? 'לא נמצאו תוצאות' : 'אין טבלאות'}</p>}
             </div>
           </div>
@@ -1260,6 +1278,7 @@ export default function ExcelWriter() {
         {/* Right-click context menu */}
         {contextMenu && (
           <div
+            ref={contextMenuRef}
             className="cell-context-menu"
             style={{ top: contextMenu.y, left: contextMenu.x }}
             onClick={e => e.stopPropagation()}

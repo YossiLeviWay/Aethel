@@ -281,40 +281,38 @@
 
 .gantt-date-header-cell {
   text-align: center;
-  padding: 0.3rem 0.2rem !important;
+  padding: 0.25rem 0.2rem !important;
   background: #f1f5f9;
-  font-size: 0.72rem;
-  line-height: 1.3;
-}
-
-.gantt-date-header-day {
-  font-weight: 700;
-  color: #475569;
-  margin-left: 0.3rem;
+  line-height: 1.2;
 }
 
 .gantt-date-header-num {
-  font-weight: 700;
+  display: block;
+  font-size: 1rem;
+  font-weight: 800;
   color: #2563eb;
-  margin-left: 0.3rem;
 }
 
 .gantt-date-header-full {
-  font-size: 0.6rem;
+  display: block;
+  font-size: 0.62rem;
   color: #94a3b8;
+  margin-top: 1px;
 }
 
 .gantt-cell-cat {
-  font-size: 0.65rem;
-  color: #1e293b;
-  font-weight: 700;
+  font-size: 0.72rem;
+  color: #1e3a5f;
+  font-weight: 800;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 1px;
-  background: rgba(37, 99, 235, 0.08);
-  padding: 0 3px;
-  border-radius: 2px;
+  margin-bottom: 2px;
+  background: rgba(37, 99, 235, 0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: -0.01em;
+  border-right: 2px solid #2563eb;
 }
 
 .gantt-cell--holiday {

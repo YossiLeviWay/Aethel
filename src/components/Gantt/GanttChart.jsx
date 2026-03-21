@@ -483,9 +483,8 @@ export default function GanttChart() {
                         className={`gantt-date-header-cell ${!isCurrentMonth ? 'gantt-cell--dim' : ''} ${isToday ? 'gantt-cell--today' : ''}`}
                         style={{ width: `${(visibleColumnWidths[vi] / totalFlex) * 100}%` }}
                       >
-                        <span className="gantt-date-header-day">{HEBREW_DAYS[di]}</span>
                         <span className="gantt-date-header-num">{date.getDate()}</span>
-                        <span className="gantt-date-header-full">{date.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                        <span className="gantt-date-header-full">{date.toLocaleDateString('he-IL', { month: '2-digit', year: 'numeric' })}</span>
                       </td>
                     );
                   })}

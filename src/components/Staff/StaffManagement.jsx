@@ -54,6 +54,7 @@ const DEFAULT_PERMISSIONS = {
   categories_edit: false,
   staff_view: true,
   staff_edit: false,
+  staff_delete: false,
   tasks_view: true,
   tasks_edit: false,
   tasks_assign: false,
@@ -92,6 +93,7 @@ const PERMISSION_GROUPS = [
     permissions: [
       { key: 'staff_view', label: 'צפייה בסגל' },
       { key: 'staff_edit', label: 'עריכת סגל והרשאות' },
+      { key: 'staff_delete', label: 'מחיקת איש צוות' },
     ]
   },
   {
@@ -528,6 +530,17 @@ export default function StaffManagement() {
     return inMySchool && !isHigherRole;
   }
 
+  // Can the logged-in user delete this staff member?
+  // Principals can delete editors/viewers in their school; admins can delete anyone
+  function canDeleteUser(user) {
+    if (isAdmin) return true;
+    if (!isPrincipal()) return false;
+    const userSchoolIds = user.schoolIds || (user.schoolId ? [user.schoolId] : []);
+    const inMySchool = userSchoolIds.includes(schoolId);
+    const isHigherRole = user.role === 'principal' || user.role === 'global_admin';
+    return inMySchool && !isHigherRole;
+  }
+
   // Context menu handlers
   function handleContextMenu(e, user) {
     e.preventDefault();
@@ -841,7 +854,7 @@ export default function StaffManagement() {
                       <button className="icon-btn" onClick={() => openEdit(user)} title="עריכה">
                         <Edit3 size={14} />
                       </button>
-                      {isAdmin && (
+                      {canDeleteUser(user) && (
                         <button className="icon-btn icon-btn--danger" onClick={() => handleDelete(user.id)}>
                           <Trash2 size={14} />
                         </button>
@@ -904,7 +917,7 @@ export default function StaffManagement() {
                                 <button className="icon-btn" title="עריכה" onClick={() => openEdit(user)}>
                                   <Edit3 size={15} />
                                 </button>
-                                {isAdmin && (
+                                {canDeleteUser(user) && (
                                   <button className="icon-btn icon-btn--danger" title="הסרה" onClick={() => handleDelete(user.id)}>
                                     <Trash2 size={15} />
                                   </button>
