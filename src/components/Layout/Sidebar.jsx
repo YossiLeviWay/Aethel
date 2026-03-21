@@ -275,13 +275,6 @@ export default function Sidebar() {
                 title={collapsed ? item.label : undefined}
                 {...(isNotifications ? {
                   ref: notifBellRef,
-                  onClick: (e) => {
-                    if (!collapsed) {
-                      // On click, toggle popup instead of navigating
-                      e.preventDefault();
-                      setShowNotifPopup(prev => !prev);
-                    }
-                  },
                   onMouseEnter: () => {
                     if (!collapsed) setShowNotifPopup(true);
                   }
