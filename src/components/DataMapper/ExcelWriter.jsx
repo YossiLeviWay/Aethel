@@ -9,10 +9,12 @@ import {
   doc,
   onSnapshot,
   query,
-  orderBy
+  orderBy,
+  where,
+  getDocs
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type, Scissors, Copy, Clipboard, ClipboardPaste, RotateCcw, ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ArrowLeftToLine, Eraser, Merge, SplitSquareHorizontal, Paintbrush, Palette } from 'lucide-react';
+import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type, Scissors, Copy, Clipboard, ClipboardPaste, RotateCcw, ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ArrowLeftToLine, Eraser, Merge, SplitSquareHorizontal, Paintbrush, Palette, Users, Edit3, Share2 } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './DataMapper.css';
 
@@ -149,6 +151,13 @@ export default function ExcelWriter() {
   const [mergedCells, setMergedCells] = useState([]); // array of { startRow, startCol, endRow, endCol }
   const [cellStyles, setCellStyles] = useState({}); // keyed by "row-col" => { bg, color }
   const [colorPickerMenu, setColorPickerMenu] = useState(null); // { type: 'bg'|'color', x, y }
+  const [sheetContextMenu, setSheetContextMenu] = useState(null); // { x, y, sheetId }
+  const [renamingSheetId, setRenamingSheetId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [shareSheetId, setShareSheetId] = useState(null);
+  const [shareUsers, setShareUsers] = useState([]);
+  const [shareTeams, setShareTeams] = useState([]);
+  const [shareSelected, setShareSelected] = useState([]); // selected user/team IDs
   const tableRef = useRef(null);
 
   const PRESET_COLORS = [
@@ -262,6 +271,82 @@ export default function ExcelWriter() {
       setActiveSheet(null);
       setSheetData({ columns: [], rows: [] });
     }
+  }
+
+  // Sheet context menu handler
+  function handleSheetContextMenu(e, sheetId) {
+    e.preventDefault();
+    e.stopPropagation();
+    const menuWidth = 180;
+    const menuHeight = 130;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let x = e.clientX;
+    let y = e.clientY;
+    if (x + menuWidth > vw) x = vw - menuWidth - 8;
+    if (y + menuHeight > vh) y = vh - menuHeight - 8;
+    if (x < 4) x = 4;
+    if (y < 4) y = 4;
+    setSheetContextMenu({ x, y, sheetId });
+  }
+
+  function closeSheetContextMenu() {
+    setSheetContextMenu(null);
+  }
+
+  // Rename sheet
+  function startRenameSheet(sheetId) {
+    const sheet = sheets.find(s => s.id === sheetId);
+    setRenamingSheetId(sheetId);
+    setRenameValue(sheet?.name || '');
+    closeSheetContextMenu();
+  }
+
+  async function submitRenameSheet(sheetId) {
+    const name = renameValue.trim();
+    if (!name || !schoolId) { setRenamingSheetId(null); return; }
+    try {
+      await updateDoc(doc(db, `sheets_${schoolId}`, sheetId), { name });
+    } catch (err) {
+      alert('שגיאה בשינוי שם: ' + err.message);
+    }
+    setRenamingSheetId(null);
+    setRenameValue('');
+  }
+
+  // Share sheet
+  async function openShareModal(sheetId) {
+    closeSheetContextMenu();
+    setShareSheetId(sheetId);
+    // Load existing sharedWith from the sheet
+    const sheet = sheets.find(s => s.id === sheetId);
+    setShareSelected(sheet?.sharedWith || []);
+    // Load users from school
+    try {
+      const usersQ = query(collection(db, 'users'), where('schoolIds', 'array-contains', schoolId));
+      const usersSnap = await getDocs(usersQ);
+      setShareUsers(usersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch { setShareUsers([]); }
+    // Load teams
+    try {
+      const teamsSnap = await getDocs(collection(db, `teams_${schoolId}`));
+      setShareTeams(teamsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch { setShareTeams([]); }
+  }
+
+  function toggleShareItem(id) {
+    setShareSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+
+  async function saveShare() {
+    if (!shareSheetId || !schoolId) return;
+    try {
+      await updateDoc(doc(db, `sheets_${schoolId}`, shareSheetId), { sharedWith: shareSelected });
+    } catch (err) {
+      alert('שגיאה בשיתוף: ' + err.message);
+    }
+    setShareSheetId(null);
+    setShareSelected([]);
   }
 
   function updateColumn(index, value) {
@@ -614,13 +699,33 @@ export default function ExcelWriter() {
     // In edit mode, let the browser handle arrow keys for cursor movement within text
   }
 
-  // Right-click context menu
+  // Right-click context menu with viewport boundary checking
   function handleContextMenu(ri, ci, e) {
     e.preventDefault();
     setEditingCell({ ri, ci });
     setFormulaBar(sheetData.rows[ri]?.[ci] || '');
     setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
-    setContextMenu({ x: e.clientX, y: e.clientY, ri, ci });
+
+    const menuWidth = 200;
+    const menuHeight = 420;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let x = e.clientX;
+    let y = e.clientY;
+
+    // If menu would overflow right edge, position from left
+    if (x + menuWidth > vw) {
+      x = vw - menuWidth - 8;
+    }
+    // If menu would overflow bottom edge, position upward
+    if (y + menuHeight > vh) {
+      y = vh - menuHeight - 8;
+    }
+    // Ensure not negative
+    if (x < 4) x = 4;
+    if (y < 4) y = 4;
+
+    setContextMenu({ x, y, ri, ci });
   }
 
   function closeContextMenu() {
@@ -807,14 +912,14 @@ export default function ExcelWriter() {
     setColorPickerMenu({ type, x: e.clientX, y: e.clientY });
   }
 
-  // Close context menu and color picker on click anywhere
+  // Close context menus and color picker on click anywhere
   useEffect(() => {
-    function handleClick() { setContextMenu(null); setColorPickerMenu(null); }
-    if (contextMenu || colorPickerMenu) {
+    function handleClick() { setContextMenu(null); setColorPickerMenu(null); setSheetContextMenu(null); }
+    if (contextMenu || colorPickerMenu || sheetContextMenu) {
       window.addEventListener('click', handleClick);
       return () => window.removeEventListener('click', handleClick);
     }
-  }, [contextMenu, colorPickerMenu]);
+  }, [contextMenu, colorPickerMenu, sheetContextMenu]);
 
   function insertCalcRow(calcId) {
     if (!editingCell) return;
@@ -875,9 +980,30 @@ export default function ExcelWriter() {
             </div>
             <div className="sheet-list">
               {filteredSheets.map(s => (
-                <div key={s.id} className={`sheet-item ${activeSheet === s.id ? 'sheet-item--active' : ''}`} onClick={() => setActiveSheet(s.id)}>
+                <div
+                  key={s.id}
+                  className={`sheet-item ${activeSheet === s.id ? 'sheet-item--active' : ''}`}
+                  onClick={() => { if (renamingSheetId !== s.id) setActiveSheet(s.id); }}
+                  onContextMenu={e => handleSheetContextMenu(e, s.id)}
+                >
                   <Table2 size={14} />
-                  <span className="sheet-name">{s.name}</span>
+                  {renamingSheetId === s.id ? (
+                    <input
+                      className="sheet-rename-input"
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') submitRenameSheet(s.id);
+                        if (e.key === 'Escape') { setRenamingSheetId(null); setRenameValue(''); }
+                      }}
+                      onBlur={() => submitRenameSheet(s.id)}
+                      autoFocus
+                      onClick={e => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span className="sheet-name">{s.name}</span>
+                  )}
+                  {s.sharedWith?.length > 0 && <Users size={11} style={{ color: '#94a3b8', flexShrink: 0 }} />}
                   <button className="sheet-delete" onClick={e => { e.stopPropagation(); deleteSheet(s.id); }}><Trash2 size={12} /></button>
                 </div>
               ))}
@@ -1178,6 +1304,77 @@ export default function ExcelWriter() {
                   }}
                 />
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Sheet context menu */}
+        {sheetContextMenu && (
+          <div
+            className="cell-context-menu sheet-context-menu"
+            style={{ top: sheetContextMenu.y, left: sheetContextMenu.x }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button className="ctx-item" onClick={() => openShareModal(sheetContextMenu.sheetId)}>
+              <Share2 size={13} /> שיתוף
+            </button>
+            <button className="ctx-item" onClick={() => startRenameSheet(sheetContextMenu.sheetId)}>
+              <Edit3 size={13} /> שינוי שם
+            </button>
+            <div className="ctx-divider" />
+            <button className="ctx-item ctx-item--danger" onClick={() => { const id = sheetContextMenu.sheetId; closeSheetContextMenu(); deleteSheet(id); }}>
+              <Trash2 size={13} /> מחיקה
+            </button>
+          </div>
+        )}
+
+        {/* Share modal */}
+        {shareSheetId && (
+          <div className="share-modal-overlay" onClick={() => { setShareSheetId(null); setShareSelected([]); }}>
+            <div className="share-modal" onClick={e => e.stopPropagation()}>
+              <div className="share-modal-header">
+                <h3>שיתוף טבלה</h3>
+                <button className="icon-btn" onClick={() => { setShareSheetId(null); setShareSelected([]); }}><X size={16} /></button>
+              </div>
+              <div className="share-modal-body">
+                {shareUsers.length > 0 && (
+                  <div className="share-section">
+                    <h4><Users size={13} /> משתמשים</h4>
+                    {shareUsers.map(u => (
+                      <label key={u.id} className="share-check-item">
+                        <input
+                          type="checkbox"
+                          checked={shareSelected.includes(u.id)}
+                          onChange={() => toggleShareItem(u.id)}
+                        />
+                        <span>{u.fullName || u.email || u.id}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {shareTeams.length > 0 && (
+                  <div className="share-section">
+                    <h4><Users size={13} /> צוותים</h4>
+                    {shareTeams.map(t => (
+                      <label key={t.id} className="share-check-item">
+                        <input
+                          type="checkbox"
+                          checked={shareSelected.includes(t.id)}
+                          onChange={() => toggleShareItem(t.id)}
+                        />
+                        <span>{t.name || t.id}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {shareUsers.length === 0 && shareTeams.length === 0 && (
+                  <p className="sheets-empty">לא נמצאו משתמשים או צוותים</p>
+                )}
+              </div>
+              <div className="share-modal-footer">
+                <button className="btn btn-primary btn-sm" onClick={saveShare}>שמירה</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setShareSheetId(null); setShareSelected([]); }}>ביטול</button>
+              </div>
             </div>
           </div>
         )}

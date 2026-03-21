@@ -8,6 +8,59 @@
   overflow: hidden;
 }
 
+/* ===== Pill-style Tabs ===== */
+.msg-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0.65rem 0.75rem;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.msg-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.msg-tab:first-child {
+  border-radius: 0 8px 8px 0;
+  border-left: none;
+}
+
+.msg-tab:last-child {
+  border-radius: 8px 0 0 8px;
+  border-right: none;
+}
+
+.msg-tab:first-child:last-child {
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.msg-tab:hover:not(.msg-tab--active) {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.msg-tab--active {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.3);
+}
+
 /* Conversations Panel */
 .conv-panel {
   width: 280px;
@@ -47,6 +100,7 @@
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s;
+  position: relative;
 }
 
 .conv-item:hover {
@@ -106,6 +160,41 @@
   color: #94a3b8;
   font-size: 0.8rem;
   padding: 1.5rem;
+}
+
+/* Conversation item actions (delete button + unread dot) */
+.conv-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.conv-delete-btn {
+  background: none;
+  border: none;
+  color: transparent;
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s;
+}
+
+.conv-item:hover .conv-delete-btn {
+  color: #94a3b8;
+}
+
+.conv-delete-btn:hover {
+  color: #ef4444 !important;
+  background: #fef2f2;
+}
+
+.conv-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 /* New conversation user list */
@@ -256,6 +345,104 @@
   white-space: pre-wrap;
 }
 
+/* ===== Image in messages ===== */
+.msg-image-wrapper {
+  margin: 0.3rem 0;
+}
+
+.msg-image {
+  max-width: 240px;
+  max-height: 200px;
+  border-radius: 8px;
+  cursor: pointer;
+  object-fit: cover;
+  display: block;
+  transition: opacity 0.15s;
+}
+
+.msg-image:hover {
+  opacity: 0.9;
+}
+
+/* Image upload button */
+.msg-image-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.msg-image-btn:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.msg-image-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Image preview overlay */
+.image-preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 2rem;
+}
+
+.image-preview-modal {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.image-preview-close {
+  position: absolute;
+  top: -12px;
+  left: -12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.15s;
+  z-index: 1;
+}
+
+.image-preview-close:hover {
+  background: #f1f5f9;
+}
+
+.image-preview-img {
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 12px;
+  object-fit: contain;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
 .msg-input {
   display: flex;
   gap: 0.4rem;
@@ -264,7 +451,8 @@
   background: #fff;
 }
 
-.msg-input input {
+.msg-input input[type="text"],
+.msg-input input:not([type]) {
   flex: 1;
   padding: 0.55rem 0.75rem;
   border: 1px solid #e2e8f0;
@@ -273,7 +461,8 @@
   font-family: 'Inter', sans-serif;
 }
 
-.msg-input input:focus {
+.msg-input input[type="text"]:focus,
+.msg-input input:not([type]):focus {
   outline: none;
   border-color: #2563eb;
 }
@@ -290,6 +479,7 @@
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s;
+  flex-shrink: 0;
 }
 
 .msg-send:hover:not(:disabled) {
@@ -474,5 +664,15 @@
 
   .msg-bubble {
     max-width: 85%;
+  }
+
+  .msg-image {
+    max-width: 180px;
+    max-height: 150px;
+  }
+
+  .msg-tab {
+    font-size: 0.72rem;
+    padding: 0.4rem 0.4rem;
   }
 }

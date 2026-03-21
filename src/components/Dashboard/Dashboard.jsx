@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import Header from '../Layout/Header';
-import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck, Activity, School, UserPlus, Shield, Megaphone } from 'lucide-react';
+import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck, Activity, School, UserPlus, Shield, Megaphone, FileText, BarChart3, SlidersHorizontal } from 'lucide-react';
 import './Dashboard.css';
 
 function getGreeting() {
@@ -74,7 +74,7 @@ const HOLIDAY_BORDER_COLORS = {
 };
 
 export default function Dashboard() {
-  const { userData, selectedSchool, isGlobalAdmin, isPrincipal, isPending, approveUser, rejectUser } = useAuth();
+  const { currentUser, userData, selectedSchool, isGlobalAdmin, isPrincipal, isPending, approveUser, rejectUser } = useAuth();
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [taskStats, setTaskStats] = useState({ total: 0, pending: 0, completed: 0, overdue: 0 });
@@ -87,9 +87,69 @@ export default function Dashboard() {
   const [activityFeed, setActivityFeed] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [schoolStats, setSchoolStats] = useState([]);
+  const [systemSummary, setSystemSummary] = useState({ totalUsers: 0, totalFiles: 0, totalTasks: 0, totalSchools: 0 });
   const [allSchoolEvents, setAllSchoolEvents] = useState([]);
   const [recentAnnouncements, setRecentAnnouncements] = useState([]);
   const [announcementTeams, setAnnouncementTeams] = useState([]);
+
+  // Filter preferences state
+  const [showEventsFilter, setShowEventsFilter] = useState(false);
+  const [showHolidaysFilter, setShowHolidaysFilter] = useState(false);
+  const [hiddenEventCategories, setHiddenEventCategories] = useState([]);
+  const [hiddenHolidayTypes, setHiddenHolidayTypes] = useState([]);
+  const [pendingHiddenEventCategories, setPendingHiddenEventCategories] = useState([]);
+  const [pendingHiddenHolidayTypes, setPendingHiddenHolidayTypes] = useState([]);
+
+  const HOLIDAY_TYPES = ['jewish', 'muslim', 'christian', 'druze', 'national'];
+
+  // Load dashboard preferences from userData on mount/change
+  useEffect(() => {
+    const prefs = userData?.dashboardPreferences;
+    if (prefs) {
+      setHiddenEventCategories(prefs.hiddenEventCategories || []);
+      setHiddenHolidayTypes(prefs.hiddenHolidayTypes || []);
+    } else {
+      setHiddenEventCategories([]);
+      setHiddenHolidayTypes([]);
+    }
+  }, [userData?.dashboardPreferences]);
+
+  // Save filter preferences to Firestore
+  async function saveFilterPreferences(newHiddenEvents, newHiddenHolidays) {
+    if (!currentUser) return;
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(userRef, {
+        'dashboardPreferences.hiddenEventCategories': newHiddenEvents,
+        'dashboardPreferences.hiddenHolidayTypes': newHiddenHolidays,
+      });
+      setHiddenEventCategories(newHiddenEvents);
+      setHiddenHolidayTypes(newHiddenHolidays);
+    } catch (err) {
+      console.error('Error saving filter preferences:', err);
+    }
+  }
+
+  // Get unique event categories from current events
+  const eventCategories = [...new Set(events.map(e => e.category).filter(Boolean))];
+
+  // Filtered events and holidays
+  const filteredEvents = events.filter(e => !e.category || !hiddenEventCategories.includes(e.category));
+  const filteredHolidays = holidays.filter(h => !h.type || !hiddenHolidayTypes.includes(h.type));
+
+  // Close filter popups when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (showEventsFilter && !e.target.closest('.filter-popup-container')) {
+        setShowEventsFilter(false);
+      }
+      if (showHolidaysFilter && !e.target.closest('.filter-popup-container')) {
+        setShowHolidaysFilter(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showEventsFilter, showHolidaysFilter]);
 
   useEffect(() => {
     if (!selectedSchool) return;
@@ -267,6 +327,8 @@ export default function Dashboard() {
         // 3. Per-school summary stats
         const statsArr = [];
         const today = new Date().toISOString().split('T')[0];
+        let totalFiles = 0;
+        let totalTasks = 0;
         for (const school of allSchools) {
           const staffList = allUsers.filter(u => {
             const sids = u.schoolIds || [];
@@ -275,6 +337,8 @@ export default function Dashboard() {
           const principalCount = staffList.filter(u => u.role === 'principal').length;
           let eventCount = 0;
           let taskCount = 0;
+          let fileCount = 0;
+          let lastActivity = school.createdAt || '';
           try {
             const evSnap = await getDocs(query(collection(db, `events_${school.id}`), where('date', '>=', today)));
             eventCount = evSnap.size;
@@ -282,7 +346,26 @@ export default function Dashboard() {
           try {
             const tkSnap = await getDocs(collection(db, `tasks_${school.id}`));
             taskCount = tkSnap.size;
+            tkSnap.docs.forEach(d => {
+              const t = d.data();
+              if (t.createdAt && t.createdAt > lastActivity) lastActivity = t.createdAt;
+              if (t.updatedAt && t.updatedAt > lastActivity) lastActivity = t.updatedAt;
+            });
           } catch (e) { /* collection may not exist */ }
+          try {
+            const flSnap = await getDocs(collection(db, `files_${school.id}`));
+            fileCount = flSnap.size;
+            flSnap.docs.forEach(d => {
+              const f = d.data();
+              if (f.createdAt && f.createdAt > lastActivity) lastActivity = f.createdAt;
+            });
+          } catch (e) { /* collection may not exist */ }
+          // Check staff creation dates for last activity
+          staffList.forEach(u => {
+            if (u.createdAt && u.createdAt > lastActivity) lastActivity = u.createdAt;
+          });
+          totalFiles += fileCount;
+          totalTasks += taskCount;
           statsArr.push({
             id: school.id,
             name: school.name || school.id,
@@ -290,10 +373,18 @@ export default function Dashboard() {
             principalCount,
             eventCount,
             taskCount,
+            fileCount,
+            lastActivity,
             createdAt: school.createdAt || '',
           });
         }
         setSchoolStats(statsArr);
+        setSystemSummary({
+          totalSchools: allSchools.length,
+          totalUsers: allUsers.filter(u => u.role !== 'global_admin').length,
+          totalFiles,
+          totalTasks,
+        });
 
         // 4. Fetch recent events across all schools
         const allEvents = [];
@@ -693,15 +784,62 @@ export default function Dashboard() {
             <div className="section-header">
               <Calendar size={18} />
               <h2 className="section-title">אירועים קרובים</h2>
+              <div className="filter-popup-container" style={{ marginRight: 'auto', marginLeft: 0 }}>
+                <button
+                  className="filter-gear-btn"
+                  title="סינון אירועים"
+                  onClick={() => {
+                    setPendingHiddenEventCategories(hiddenEventCategories);
+                    setShowEventsFilter(!showEventsFilter);
+                    setShowHolidaysFilter(false);
+                  }}
+                >
+                  <SlidersHorizontal size={16} />
+                </button>
+                {showEventsFilter && (
+                  <div className="filter-popup">
+                    <div className="filter-popup-title">סינון לפי קטגוריה</div>
+                    {eventCategories.length === 0 ? (
+                      <p className="filter-popup-empty">אין קטגוריות זמינות</p>
+                    ) : (
+                      <div className="filter-popup-options">
+                        {eventCategories.map(cat => (
+                          <label key={cat} className="filter-checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={!pendingHiddenEventCategories.includes(cat)}
+                              onChange={() => {
+                                setPendingHiddenEventCategories(prev =>
+                                  prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+                                );
+                              }}
+                            />
+                            <span>{cat}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      className="filter-save-btn"
+                      onClick={() => {
+                        saveFilterPreferences(pendingHiddenEventCategories, hiddenHolidayTypes);
+                        setShowEventsFilter(false);
+                      }}
+                    >
+                      שמור
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="section-body">
               {loading ? (
                 <p className="section-empty">טוען...</p>
-              ) : events.length === 0 ? (
+              ) : filteredEvents.length === 0 ? (
                 <p className="section-empty">אין אירועים קרובים</p>
               ) : (
                 <div className="event-list">
-                  {events.map(event => (
+                  {filteredEvents.map(event => (
                     <div key={event.id} className="event-card" style={{ cursor: 'pointer' }}
                       onClick={() => {
                         const d = new Date(event.date + 'T00:00:00');
@@ -735,13 +873,56 @@ export default function Dashboard() {
             <div className="section-header">
               <Star size={18} />
               <h2 className="section-title">חגים וחופשות קרובים</h2>
+              <div className="filter-popup-container" style={{ marginRight: 'auto', marginLeft: 0 }}>
+                <button
+                  className="filter-gear-btn"
+                  title="סינון חגים"
+                  onClick={() => {
+                    setPendingHiddenHolidayTypes(hiddenHolidayTypes);
+                    setShowHolidaysFilter(!showHolidaysFilter);
+                    setShowEventsFilter(false);
+                  }}
+                >
+                  <SlidersHorizontal size={16} />
+                </button>
+                {showHolidaysFilter && (
+                  <div className="filter-popup">
+                    <div className="filter-popup-title">סינון לפי סוג חג</div>
+                    <div className="filter-popup-options">
+                      {HOLIDAY_TYPES.map(type => (
+                        <label key={type} className="filter-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={!pendingHiddenHolidayTypes.includes(type)}
+                            onChange={() => {
+                              setPendingHiddenHolidayTypes(prev =>
+                                prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+                              );
+                            }}
+                          />
+                          <span>{HOLIDAY_TYPE_LABELS[type]}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <button
+                      className="filter-save-btn"
+                      onClick={() => {
+                        saveFilterPreferences(hiddenEventCategories, pendingHiddenHolidayTypes);
+                        setShowHolidaysFilter(false);
+                      }}
+                    >
+                      שמור
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="section-body">
-              {holidays.length === 0 ? (
+              {filteredHolidays.length === 0 ? (
                 <p className="section-empty">אין חגים קרובים</p>
               ) : (
                 <div className="holiday-list">
-                  {holidays.map((holiday, idx) => (
+                  {filteredHolidays.map((holiday, idx) => (
                     <div
                       key={idx}
                       className="holiday-card"

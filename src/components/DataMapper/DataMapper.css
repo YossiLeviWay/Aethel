@@ -489,6 +489,8 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   padding: 0.3rem;
   min-width: 180px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 
 .ctx-item {
@@ -531,6 +533,117 @@
   margin: 0.2rem 0;
 }
 
+/* Sheet rename input */
+.sheet-rename-input {
+  flex: 1;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid #93c5fd;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-family: 'Inter', sans-serif;
+  background: #fff;
+  color: #1e293b;
+  outline: none;
+  min-width: 0;
+}
+
+.sheet-rename-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+/* Sheet context menu */
+.sheet-context-menu {
+  min-width: 160px;
+}
+
+/* Share modal */
+.share-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.share-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  width: 380px;
+  max-width: 92vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.share-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.share-modal-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.share-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem 1rem;
+}
+
+.share-section {
+  margin-bottom: 0.75rem;
+}
+
+.share-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.4rem 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.share-check-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #334155;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.share-check-item:hover {
+  background: #f1f5f9;
+}
+
+.share-check-item input[type="checkbox"] {
+  accent-color: #2563eb;
+  width: 15px;
+  height: 15px;
+}
+
+.share-modal-footer {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-top: 1px solid #f1f5f9;
+  justify-content: flex-start;
+}
+
 @media (max-width: 768px) {
   .excel-layout {
     flex-direction: column;
@@ -550,5 +663,20 @@
 
   .formula-bar {
     flex-wrap: wrap;
+  }
+
+  /* Context menu responsive */
+  .cell-context-menu {
+    min-width: 160px;
+  }
+
+  .ctx-item {
+    font-size: 0.72rem;
+    padding: 0.35rem 0.55rem;
+    gap: 0.35rem;
+  }
+
+  .share-modal {
+    width: 95vw;
   }
 }

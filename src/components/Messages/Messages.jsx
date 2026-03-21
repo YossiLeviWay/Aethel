@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { db } from '../../firebase';
+import { db, storage } from '../../firebase';
 import {
   collection,
   query,
@@ -13,8 +13,10 @@ import {
   doc,
   getDocs,
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import Header from '../Layout/Header';
-import { Send, Search, Mail, Circle, Trash2, X, Shield, Megaphone, Users, MessageCircle } from 'lucide-react';
+import { createNotification, createNotifications } from '../../utils/notifications';
+import { Send, Search, Mail, Circle, Trash2, X, Shield, Megaphone, Users, MessageCircle, ImagePlus } from 'lucide-react';
 import './Messages.css';
 
 const ROLE_LABELS_MSG = {
@@ -36,7 +38,11 @@ export default function Messages() {
   const [searchConv, setSearchConv] = useState('');
   const [hoveredMsg, setHoveredMsg] = useState(null);
   const [confirmDeleteMsg, setConfirmDeleteMsg] = useState(null);
+  const [confirmDeleteConv, setConfirmDeleteConv] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const messagesEndRef = useRef(null);
+  const imageInputRef = useRef(null);
   const uid = currentUser?.uid;
   const schoolId = selectedSchool || userData?.schoolId;
 
@@ -260,6 +266,16 @@ export default function Messages() {
       lastMessageAt: new Date().toISOString(),
       unreadBy: otherIds
     });
+
+    // Notify recipients about the new message
+    for (const recipientId of otherIds) {
+      createNotification(recipientId, {
+        title: `הודעה חדשה מ${userData?.fullName || 'משתמש'}`,
+        body: text.length > 80 ? text.slice(0, 80) + '...' : text,
+        type: 'message',
+        link: '/messages'
+      });
+    }
   }
 
   async function sendAnnouncement(e) {
@@ -312,6 +328,65 @@ export default function Messages() {
       console.error('Error deleting message:', err);
     }
     setConfirmDeleteMsg(null);
+  }
+
+  async function deleteConversation(conv) {
+    if (!conv) return;
+    try {
+      // Delete all messages in the subcollection
+      const msgsSnap = await getDocs(collection(db, 'conversations', conv.id, 'messages'));
+      const deletePromises = msgsSnap.docs.map(d => deleteDoc(doc(db, 'conversations', conv.id, 'messages', d.id)));
+      await Promise.all(deletePromises);
+      // Also delete messages from merged conversations
+      if (conv._mergedIds) {
+        for (const mergedId of conv._mergedIds) {
+          const mergedMsgsSnap = await getDocs(collection(db, 'conversations', mergedId, 'messages'));
+          const mergedDeletes = mergedMsgsSnap.docs.map(d => deleteDoc(doc(db, 'conversations', mergedId, 'messages', d.id)));
+          await Promise.all(mergedDeletes);
+          await deleteDoc(doc(db, 'conversations', mergedId));
+        }
+      }
+      // Delete the conversation document
+      await deleteDoc(doc(db, 'conversations', conv.id));
+      if (activeConv?.id === conv.id) {
+        setActiveConv(null);
+        setMessages([]);
+      }
+    } catch (err) {
+      console.error('Error deleting conversation:', err);
+    }
+    setConfirmDeleteConv(null);
+  }
+
+  async function handleImageUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file || !activeConv) return;
+    if (!file.type.startsWith('image/')) return;
+    setUploadingImage(true);
+    try {
+      const filename = `${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, `chat_images/${activeConv.id}/${filename}`);
+      await uploadBytes(storageRef, file);
+      const imageUrl = await getDownloadURL(storageRef);
+      const otherIds = activeConv.participants.filter(id => id !== uid);
+      await addDoc(collection(db, 'conversations', activeConv.id, 'messages'), {
+        text: '',
+        imageUrl,
+        senderId: uid,
+        senderName: userData?.fullName || '',
+        senderRole: userData?.role || '',
+        createdAt: new Date().toISOString()
+      });
+      await updateDoc(doc(db, 'conversations', activeConv.id), {
+        lastMessage: '📷 תמונה',
+        lastMessageAt: new Date().toISOString(),
+        unreadBy: otherIds
+      });
+    } catch (err) {
+      console.error('Error uploading image:', err);
+    }
+    setUploadingImage(false);
+    if (imageInputRef.current) imageInputRef.current.value = '';
   }
 
   function getOtherName(conv) {
@@ -473,7 +548,23 @@ export default function Messages() {
                           </div>
                           <span className="conv-last-msg">{conv.lastMessage || 'שיחה חדשה'}</span>
                         </div>
-                        {isUnread && <Circle size={8} fill="#2563eb" className="conv-unread-dot" />}
+                        <div className="conv-item-actions">
+                          {isUnread && <Circle size={8} fill="#2563eb" className="conv-unread-dot" />}
+                          {confirmDeleteConv === conv.id ? (
+                            <div className="conv-delete-confirm" onClick={e => e.stopPropagation()}>
+                              <button className="msg-delete-yes" onClick={() => deleteConversation(conv)}>מחק</button>
+                              <button className="msg-delete-no" onClick={() => setConfirmDeleteConv(null)}>לא</button>
+                            </div>
+                          ) : (
+                            <button
+                              className="conv-delete-btn"
+                              onClick={e => { e.stopPropagation(); setConfirmDeleteConv(conv.id); }}
+                              title="מחיקת שיחה"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -614,7 +705,17 @@ export default function Messages() {
                             </button>
                           )}
                         </div>
-                        <div className="msg-text">{msg.text}</div>
+                        {msg.imageUrl && (
+                          <div className="msg-image-wrapper">
+                            <img
+                              src={msg.imageUrl}
+                              alt="תמונה"
+                              className="msg-image"
+                              onClick={() => setImagePreview(msg.imageUrl)}
+                            />
+                          </div>
+                        )}
+                        {msg.text && <div className="msg-text">{msg.text}</div>}
                         {confirmDeleteMsg === msg.id && (
                           <div className="msg-delete-confirm">
                             <span>למחוק הודעה זו?</span>
@@ -634,6 +735,22 @@ export default function Messages() {
                     placeholder="כתבו הודעה..."
                     autoFocus
                   />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={imageInputRef}
+                    style={{ display: 'none' }}
+                    onChange={handleImageUpload}
+                  />
+                  <button
+                    type="button"
+                    className="msg-image-btn"
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={uploadingImage}
+                    title="שליחת תמונה"
+                  >
+                    <ImagePlus size={16} />
+                  </button>
                   <button type="submit" className="msg-send" disabled={!newMsg.trim()}>
                     <Send size={16} />
                   </button>
@@ -652,6 +769,18 @@ export default function Messages() {
             )}
           </div>
         </div>
+
+        {/* Image preview modal */}
+        {imagePreview && (
+          <div className="image-preview-overlay" onClick={() => setImagePreview(null)}>
+            <div className="image-preview-modal" onClick={e => e.stopPropagation()}>
+              <button className="image-preview-close" onClick={() => setImagePreview(null)}>
+                <X size={20} />
+              </button>
+              <img src={imagePreview} alt="תמונה מוגדלת" className="image-preview-img" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

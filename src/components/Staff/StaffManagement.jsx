@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../../firebase';
 import {
   collection,
@@ -12,12 +13,14 @@ import {
   setDoc,
   arrayUnion,
   arrayRemove,
-  getDoc
+  getDoc,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, updateEmail, deleteUser, signOut as firebaseSignOut } from 'firebase/auth';
 import { secondaryAuth } from '../../firebase';
 import Header from '../Layout/Header';
-import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User } from 'lucide-react';
+import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User, MessageCircle, Briefcase, Eye } from 'lucide-react';
 import RolesManager from './RolesManager';
 import '../Gantt/Gantt.css';
 import './Staff.css';
@@ -165,6 +168,7 @@ function getPermissionsForRole(role) {
 
 export default function StaffManagement() {
   const { userData, selectedSchool, isPrincipal, isGlobalAdmin, approveUser, rejectUser } = useAuth();
+  const navigate = useNavigate();
   const [staff, setStaff] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   const [viewMode, setViewMode] = useState('table');
@@ -192,6 +196,21 @@ export default function StaffManagement() {
   const [showRolesManager, setShowRolesManager] = useState(false);
   const [customRoles, setCustomRoles] = useState([]);
   const [teams, setTeams] = useState([]);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, user }
+  const contextMenuRef = useRef(null);
+
+  // Task attachment popup
+  const [taskAttachUser, setTaskAttachUser] = useState(null);
+  const [taskList, setTaskList] = useState([]);
+  const [taskListLoading, setTaskListLoading] = useState(false);
+
+  // Profile popup
+  const [profileUser, setProfileUser] = useState(null);
+  const [profileTasks, setProfileTasks] = useState([]);
+  const [profileActivity, setProfileActivity] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   const schoolId = selectedSchool || userData?.schoolId;
   const isAdmin = isGlobalAdmin();
@@ -509,6 +528,132 @@ export default function StaffManagement() {
     return inMySchool && !isHigherRole;
   }
 
+  // Context menu handlers
+  function handleContextMenu(e, user) {
+    e.preventDefault();
+    const menuWidth = 200;
+    const menuHeight = 140;
+    let x = e.clientX;
+    let y = e.clientY;
+    if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 8;
+    if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 8;
+    if (x < 0) x = 8;
+    if (y < 0) y = 8;
+    setContextMenu({ x, y, user });
+  }
+
+  function closeContextMenu() {
+    setContextMenu(null);
+  }
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    function handleClick() { closeContextMenu(); }
+    function handleScroll() { closeContextMenu(); }
+    window.addEventListener('click', handleClick);
+    window.addEventListener('scroll', handleScroll, true);
+    return () => {
+      window.removeEventListener('click', handleClick);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [contextMenu]);
+
+  function handleSendMessage(user) {
+    closeContextMenu();
+    navigate(`/messages?userId=${user.id}`);
+  }
+
+  async function handleAttachToTask(user) {
+    closeContextMenu();
+    setTaskAttachUser(user);
+    setTaskListLoading(true);
+    try {
+      const tasksSnap = await getDocs(collection(db, `tasks_${schoolId}`));
+      setTaskList(tasksSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error('Error loading tasks:', err);
+      setTaskList([]);
+    }
+    setTaskListLoading(false);
+  }
+
+  async function assignUserToTask(taskId) {
+    if (!taskAttachUser) return;
+    try {
+      await updateDoc(doc(db, `tasks_${schoolId}`, taskId), {
+        assigneeIds: arrayUnion(taskAttachUser.id)
+      });
+      setTaskAttachUser(null);
+      setTaskList([]);
+    } catch (err) {
+      console.error('Error assigning user to task:', err);
+    }
+  }
+
+  async function openProfilePopup(user) {
+    closeContextMenu();
+    setProfileUser(user);
+    setProfileLoading(true);
+    setProfileTasks([]);
+    setProfileActivity(null);
+    try {
+      const tasksQuery = query(
+        collection(db, `tasks_${schoolId}`),
+        where('assigneeIds', 'array-contains', user.id),
+        limit(5)
+      );
+      const tasksSnap = await getDocs(tasksQuery);
+      setProfileTasks(tasksSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error('Error loading profile tasks:', err);
+    }
+    try {
+      const announcementsQuery = query(
+        collection(db, `announcements_${schoolId}`),
+        where('authorId', '==', user.id),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+      );
+      const announcementsSnap = await getDocs(announcementsQuery);
+      if (!announcementsSnap.empty) {
+        const latest = announcementsSnap.docs[0].data();
+        setProfileActivity({ type: 'announcement', date: latest.createdAt });
+      } else {
+        const messagesQuery = query(
+          collection(db, `messages_${schoolId}`),
+          where('senderId', '==', user.id),
+          orderBy('createdAt', 'desc'),
+          limit(1)
+        );
+        const messagesSnap = await getDocs(messagesQuery);
+        if (!messagesSnap.empty) {
+          const latest = messagesSnap.docs[0].data();
+          setProfileActivity({ type: 'message', date: latest.createdAt });
+        }
+      }
+    } catch (err) {
+      console.error('Error loading profile activity:', err);
+    }
+    setProfileLoading(false);
+  }
+
+  function getUserTeamNames(user) {
+    if (!user.teamIds || user.teamIds.length === 0) return [];
+    return user.teamIds
+      .map(tid => teams.find(t => t.id === tid)?.name)
+      .filter(Boolean);
+  }
+
+  function formatActivityDate(dateVal) {
+    if (!dateVal) return '';
+    try {
+      const d = dateVal.toDate ? dateVal.toDate() : new Date(dateVal);
+      return d.toLocaleDateString('he-IL');
+    } catch {
+      return String(dateVal);
+    }
+  }
+
   // Filtered staff
   const filteredStaff = staff.filter(user => {
     if (searchQuery.trim()) {
@@ -661,7 +806,7 @@ export default function StaffManagement() {
             {filteredStaff.map(user => {
               const schoolNames = getUserSchoolNames(user);
               return (
-                <div key={user.id} className="staff-card">
+                <div key={user.id} className="staff-card" onContextMenu={e => handleContextMenu(e, user)}>
                   <div className="staff-card-avatar">{user.fullName?.charAt(0) || '?'}</div>
                   <h4 className="staff-card-name">{user.fullName}</h4>
                   <p className="staff-card-title">{user.jobTitle || '—'}</p>
@@ -724,7 +869,7 @@ export default function StaffManagement() {
                 {filteredStaff.map(user => {
                   const schoolNames = getUserSchoolNames(user);
                   return (
-                    <tr key={user.id}>
+                    <tr key={user.id} onContextMenu={e => handleContextMenu(e, user)}>
                       <td className="td-bold">
                         <div className="td-user">
                           <div className="td-avatar">{user.fullName?.charAt(0)}</div>
@@ -1171,6 +1316,165 @@ export default function StaffManagement() {
                   שמירת הרשאות
                 </button>
                 <button className="btn btn-secondary" onClick={() => setPermissionsUser(null)}>ביטול</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Context Menu */}
+        {contextMenu && (
+          <div
+            ref={contextMenuRef}
+            className="staff-context-menu"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button className="staff-context-menu-item" onClick={() => handleSendMessage(contextMenu.user)}>
+              <MessageCircle size={15} />
+              <span>שלח הודעה פרטית</span>
+            </button>
+            <button className="staff-context-menu-item" onClick={() => handleAttachToTask(contextMenu.user)}>
+              <Briefcase size={15} />
+              <span>צרף למשימה</span>
+            </button>
+            <button className="staff-context-menu-item" onClick={() => openProfilePopup(contextMenu.user)}>
+              <Eye size={15} />
+              <span>כרטיס אישי</span>
+            </button>
+          </div>
+        )}
+
+        {/* Task Attachment Popup */}
+        {taskAttachUser && (
+          <div className="modal-overlay" onClick={() => { setTaskAttachUser(null); setTaskList([]); }}>
+            <div className="modal-content staff-task-attach-modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>צרף את {taskAttachUser.fullName} למשימה</h3>
+                <button className="modal-close" onClick={() => { setTaskAttachUser(null); setTaskList([]); }}><X size={18} /></button>
+              </div>
+              <div className="staff-task-attach-body">
+                {taskListLoading ? (
+                  <p className="staff-task-attach-empty">טוען משימות...</p>
+                ) : taskList.length === 0 ? (
+                  <p className="staff-task-attach-empty">לא נמצאו משימות</p>
+                ) : (
+                  <div className="staff-task-attach-list">
+                    {taskList.map(task => {
+                      const alreadyAssigned = (task.assigneeIds || []).includes(taskAttachUser.id);
+                      return (
+                        <button
+                          key={task.id}
+                          className={`staff-task-attach-item ${alreadyAssigned ? 'staff-task-attach-item--assigned' : ''}`}
+                          onClick={() => !alreadyAssigned && assignUserToTask(task.id)}
+                          disabled={alreadyAssigned}
+                        >
+                          <Briefcase size={14} />
+                          <span className="staff-task-attach-item-title">{task.title || task.name || 'משימה ללא שם'}</span>
+                          {alreadyAssigned && <span className="staff-task-attach-item-badge">משויך</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Profile Popup */}
+        {profileUser && (
+          <div className="modal-overlay" onClick={() => setProfileUser(null)}>
+            <div className="modal-content staff-profile-modal" onClick={e => e.stopPropagation()}>
+              <button className="modal-close staff-profile-close" onClick={() => setProfileUser(null)}><X size={18} /></button>
+              <div className="staff-profile-header">
+                <div className={`staff-profile-avatar avatar-style--${profileUser.avatarStyle || 'default'}`}>
+                  {profileUser.fullName?.charAt(0) || '?'}
+                </div>
+                <h3 className="staff-profile-name">{profileUser.fullName}</h3>
+                {profileUser.jobTitle && (
+                  <p className="staff-profile-job">{profileUser.jobTitle}</p>
+                )}
+                <span className={`role-badge role-${profileUser.role}`}>
+                  {ROLE_LABELS[profileUser.role] || 'צופה'}
+                </span>
+              </div>
+              <div className="staff-profile-body">
+                {/* Contact info */}
+                <div className="staff-profile-section">
+                  <div className="staff-profile-contact">
+                    <Mail size={14} />
+                    <span dir="ltr">{profileUser.email}</span>
+                  </div>
+                  {profileUser.phone && (
+                    <div className="staff-profile-contact">
+                      <Phone size={14} />
+                      <span dir="ltr">{profileUser.phone}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Teams */}
+                {(() => {
+                  const teamNames = getUserTeamNames(profileUser);
+                  return teamNames.length > 0 && (
+                    <div className="staff-profile-section">
+                      <h4 className="staff-profile-section-title">צוותים</h4>
+                      <div className="staff-profile-tags">
+                        {teamNames.map((name, i) => (
+                          <span key={i} className="staff-profile-tag staff-profile-tag--team">{name}</span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Custom roles */}
+                {profileUser.customRoleIds && profileUser.customRoleIds.length > 0 && (
+                  <div className="staff-profile-section">
+                    <h4 className="staff-profile-section-title">תפקידים מותאמים</h4>
+                    <div className="staff-profile-tags">
+                      {profileUser.customRoleIds.map(rid => {
+                        const r = customRoles.find(cr => cr.id === rid);
+                        return r ? <span key={rid} className="staff-profile-tag staff-profile-tag--role">{r.name}</span> : null;
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent tasks */}
+                <div className="staff-profile-section">
+                  <h4 className="staff-profile-section-title">משימות אחרונות</h4>
+                  {profileLoading ? (
+                    <p className="staff-profile-muted">טוען...</p>
+                  ) : profileTasks.length === 0 ? (
+                    <p className="staff-profile-muted">אין משימות מוקצות</p>
+                  ) : (
+                    <div className="staff-profile-tasks">
+                      {profileTasks.map(task => (
+                        <div key={task.id} className="staff-profile-task-item">
+                          <Briefcase size={13} />
+                          <span>{task.title || task.name || 'משימה ללא שם'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Recent activity */}
+                <div className="staff-profile-section">
+                  <h4 className="staff-profile-section-title">פעילות אחרונה</h4>
+                  {profileLoading ? (
+                    <p className="staff-profile-muted">טוען...</p>
+                  ) : profileActivity ? (
+                    <p className="staff-profile-activity">
+                      {profileActivity.type === 'announcement' ? 'פרסם הודעה' : 'שלח הודעה'}
+                      {' '}
+                      <span className="staff-profile-activity-date">{formatActivityDate(profileActivity.date)}</span>
+                    </p>
+                  ) : (
+                    <p className="staff-profile-muted">אין פעילות אחרונה</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>

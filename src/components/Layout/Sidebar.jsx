@@ -1,6 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { db } from '../../firebase';
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  getDocs,
+  updateDoc,
+  doc,
+  orderBy,
+  limit as firestoreLimit
+} from 'firebase/firestore';
 import {
   Home,
   Calendar,
@@ -17,7 +29,11 @@ import {
   Menu,
   MessageCircle,
   Sun,
-  Bell
+  Bell,
+  CheckCheck,
+  FileText,
+  UserPlus,
+  AlertCircle
 } from 'lucide-react';
 import { AVATAR_OPTIONS } from '../../data/avatars';
 import './Layout.css';
@@ -38,6 +54,16 @@ const NAV_ITEMS = [
   { path: '/settings', icon: Settings, label: 'הגדרות', all: true }
 ];
 
+const NOTIF_TYPE_ICONS = {
+  message: MessageCircle,
+  task: CheckSquare,
+  calendar: Calendar,
+  staff: Users,
+  file: FolderOpen,
+  permission: UserPlus,
+  system: AlertCircle
+};
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   useEffect(() => {
@@ -48,17 +74,114 @@ function useIsMobile() {
   return isMobile;
 }
 
+function formatNotifTime(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'עכשיו';
+  if (diffMin < 60) return `לפני ${diffMin} דק׳`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `לפני ${diffHours} שע׳`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `לפני ${diffDays} ימים`;
+  return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' });
+}
+
 export default function Sidebar() {
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(isMobile);
-  const { logout, userData, selectedSchool, isPending, isViewer } = useAuth();
+  const { logout, userData, currentUser, selectedSchool, isPending, isViewer } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Notification state
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [latestNotifs, setLatestNotifs] = useState([]);
+  const [showNotifPopup, setShowNotifPopup] = useState(false);
+  const notifPopupRef = useRef(null);
+  const notifBellRef = useRef(null);
 
   // Auto-collapse on route change for mobile
   useEffect(() => {
     if (isMobile) setCollapsed(true);
   }, [location.pathname, isMobile]);
+
+  // Listen for unread notification count
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', currentUser.uid),
+      where('read', '==', false)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setUnreadCount(snap.size);
+    }, (err) => {
+      console.warn('Error listening to notifications count:', err);
+    });
+    return unsub;
+  }, [currentUser?.uid]);
+
+  // Listen for latest 5 notifications (for the popup)
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', currentUser.uid),
+      orderBy('createdAt', 'desc'),
+      firestoreLimit(5)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setLatestNotifs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.warn('Error listening to latest notifications:', err);
+    });
+    return unsub;
+  }, [currentUser?.uid]);
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (
+        showNotifPopup &&
+        notifPopupRef.current &&
+        !notifPopupRef.current.contains(e.target) &&
+        notifBellRef.current &&
+        !notifBellRef.current.contains(e.target)
+      ) {
+        setShowNotifPopup(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showNotifPopup]);
+
+  async function markAllRead() {
+    if (!currentUser?.uid) return;
+    try {
+      const q = query(
+        collection(db, 'notifications'),
+        where('userId', '==', currentUser.uid),
+        where('read', '==', false)
+      );
+      const snap = await getDocs(q);
+      const updates = snap.docs.map(d => updateDoc(doc(db, 'notifications', d.id), { read: true }));
+      await Promise.all(updates);
+    } catch (err) {
+      console.warn('Error marking all notifications as read:', err);
+    }
+  }
+
+  function handleNotifClick(notif) {
+    setShowNotifPopup(false);
+    if (notif.link) {
+      navigate(notif.link);
+    } else {
+      navigate('/notifications');
+    }
+  }
 
   const schoolId = selectedSchool || userData?.schoolId;
   const userIsPending = isPending();
@@ -138,20 +261,105 @@ export default function Sidebar() {
       </div>
 
       <nav className="sidebar-nav">
-        {NAV_ITEMS.filter(canSeeItem).map(item => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            end={item.path === '/'}
-            className={({ isActive }) =>
-              `sidebar-link ${isActive ? 'sidebar-link--active' : ''}`
-            }
-            title={collapsed ? item.label : undefined}
-          >
-            <item.icon size={20} />
-            {!collapsed && <span>{item.label}</span>}
-          </NavLink>
-        ))}
+        {NAV_ITEMS.filter(canSeeItem).map(item => {
+          const isNotifications = item.path === '/notifications';
+
+          return (
+            <div key={item.path} className="sidebar-link-wrapper">
+              <NavLink
+                to={item.path}
+                end={item.path === '/'}
+                className={({ isActive }) =>
+                  `sidebar-link ${isActive ? 'sidebar-link--active' : ''}`
+                }
+                title={collapsed ? item.label : undefined}
+                {...(isNotifications ? {
+                  ref: notifBellRef,
+                  onClick: (e) => {
+                    if (!collapsed) {
+                      // On click, toggle popup instead of navigating
+                      e.preventDefault();
+                      setShowNotifPopup(prev => !prev);
+                    }
+                  },
+                  onMouseEnter: () => {
+                    if (!collapsed) setShowNotifPopup(true);
+                  }
+                } : {})}
+              >
+                <span className="sidebar-icon-wrap">
+                  <item.icon size={20} />
+                  {isNotifications && unreadCount > 0 && (
+                    <span className="notif-badge">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </span>
+                {!collapsed && <span>{item.label}</span>}
+              </NavLink>
+
+              {/* Notification popup dropdown */}
+              {isNotifications && showNotifPopup && !collapsed && (
+                <div
+                  className="notif-popup"
+                  ref={notifPopupRef}
+                  onMouseLeave={() => setShowNotifPopup(false)}
+                >
+                  <div className="notif-popup-header">
+                    <span className="notif-popup-title">התראות</span>
+                    {unreadCount > 0 && (
+                      <button
+                        className="notif-mark-all-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markAllRead();
+                        }}
+                      >
+                        <CheckCheck size={12} />
+                        סמן הכל כנקרא
+                      </button>
+                    )}
+                  </div>
+                  <div className="notif-popup-list">
+                    {latestNotifs.length === 0 ? (
+                      <div className="notif-popup-empty">אין התראות</div>
+                    ) : (
+                      latestNotifs.map(notif => {
+                        const TypeIcon = NOTIF_TYPE_ICONS[notif.type] || NOTIF_TYPE_ICONS.system;
+                        return (
+                          <div
+                            key={notif.id}
+                            className={`notif-popup-item ${!notif.read ? 'notif-popup-item--unread' : ''}`}
+                            onClick={() => handleNotifClick(notif)}
+                          >
+                            <div className="notif-popup-item-icon">
+                              <TypeIcon size={14} />
+                            </div>
+                            <div className="notif-popup-item-content">
+                              <span className="notif-popup-item-title">{notif.title}</span>
+                              <span className="notif-popup-item-time">{formatNotifTime(notif.createdAt)}</span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                  <div className="notif-popup-footer">
+                    <button
+                      className="notif-popup-view-all"
+                      onClick={() => {
+                        setShowNotifPopup(false);
+                        navigate('/notifications');
+                      }}
+                    >
+                      צפייה בכל ההתראות
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
 
       <div className="sidebar-footer">
