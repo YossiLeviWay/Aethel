@@ -26,6 +26,22 @@ const EMPTY_FORM = {
   color: '#f59e0b'
 };
 
+const HOLIDAY_FILTER_KEY = 'holidayReligionFilters';
+const ALL_TYPES = Object.keys(HOLIDAY_TYPES);
+
+function loadSavedFilters() {
+  try {
+    const saved = localStorage.getItem(HOLIDAY_FILTER_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Only keep valid types
+      const valid = parsed.filter(t => ALL_TYPES.includes(t));
+      if (valid.length > 0) return valid;
+    }
+  } catch {}
+  return ALL_TYPES;
+}
+
 export default function HolidayManager() {
   const { userData, selectedSchool, isGlobalAdmin, isPrincipal } = useAuth();
   const [holidays, setHolidays] = useState([]);
@@ -34,7 +50,7 @@ export default function HolidayManager() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [searchQuery, setSearchQuery] = useState('');
   const [broadcasting, setBroadcasting] = useState(false);
-  const [activeReligionFilters, setActiveReligionFilters] = useState(Object.keys(HOLIDAY_TYPES));
+  const [activeReligionFilters, setActiveReligionFilters] = useState(loadSavedFilters);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [syncingType, setSyncingType] = useState(null);
@@ -249,11 +265,15 @@ export default function HolidayManager() {
 
   function toggleReligionFilter(type) {
     setActiveReligionFilters(prev => {
+      let next;
       if (prev.includes(type)) {
-        const newFilters = prev.filter(t => t !== type);
-        return newFilters.length === 0 ? [type] : newFilters; // must have at least 1
+        const filtered = prev.filter(t => t !== type);
+        next = filtered.length === 0 ? [type] : filtered; // must have at least 1
+      } else {
+        next = [...prev, type];
       }
-      return [...prev, type];
+      try { localStorage.setItem(HOLIDAY_FILTER_KEY, JSON.stringify(next)); } catch {}
+      return next;
     });
   }
 

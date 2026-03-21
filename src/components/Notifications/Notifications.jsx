@@ -4,6 +4,7 @@ import { db } from '../../firebase';
 import { collection, query, where, getDocs, orderBy, updateDoc, doc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import Header from '../Layout/Header';
 import { Bell, Check, Trash2, CheckCheck, Calendar, Users, FileText, MessageCircle, Shield, Clock } from 'lucide-react';
+import './Notifications.css';
 
 const ICON_MAP = {
   calendar: Calendar,
