@@ -14,7 +14,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type, Scissors, Copy, Clipboard, ClipboardPaste, RotateCcw, ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ArrowLeftToLine, Eraser, Merge, SplitSquareHorizontal, Paintbrush, Palette, Users, Edit3, Share2 } from 'lucide-react';
+import { Plus, Trash2, Save, Table2, X, Search, Calculator, Type, Scissors, Copy, Clipboard, ClipboardPaste, RotateCcw, ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ArrowLeftToLine, Eraser, Merge, SplitSquareHorizontal, Paintbrush, Palette, Users, Edit3, Share2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './DataMapper.css';
 
@@ -158,6 +158,8 @@ export default function ExcelWriter() {
   const [shareUsers, setShareUsers] = useState([]);
   const [shareTeams, setShareTeams] = useState([]);
   const [shareSelected, setShareSelected] = useState([]); // selected user/team IDs
+  const [fullscreen, setFullscreen] = useState(false);
+  const [sheetsCollapsed, setSheetsCollapsed] = useState(false);
   const tableRef = useRef(null);
 
   const PRESET_COLORS = [
@@ -403,12 +405,23 @@ export default function ExcelWriter() {
     }));
   }
 
+  // Toggle fullscreen mode: hide sidebar and sheets panel
+  useEffect(() => {
+    if (fullscreen) {
+      document.body.classList.add('excel-fullscreen');
+    } else {
+      document.body.classList.remove('excel-fullscreen');
+    }
+    return () => document.body.classList.remove('excel-fullscreen');
+  }, [fullscreen]);
+
   const handleColumnResize = useCallback((colIndex, e) => {
     e.preventDefault();
     const startX = e.clientX;
     const startWidth = columnWidths[colIndex] || 120;
     function onMouseMove(ev) {
-      setColumnWidths(prev => ({ ...prev, [colIndex]: Math.max(60, startWidth + (ev.clientX - startX)) }));
+      // RTL: dragging right = smaller, dragging left = larger
+      setColumnWidths(prev => ({ ...prev, [colIndex]: Math.max(60, startWidth - (ev.clientX - startX)) }));
     }
     function onMouseUp() {
       document.removeEventListener('mousemove', onMouseMove);
@@ -957,8 +970,8 @@ export default function ExcelWriter() {
     <div className="page">
       <Header title="מיפוי נתונים" />
       <div className="page-content">
-        <div className="excel-layout">
-          <div className="sheets-panel">
+        <div className={`excel-layout${fullscreen ? ' excel-layout--fullscreen' : ''}`}>
+          <div className="sheets-panel" style={sheetsCollapsed ? { display: 'none' } : undefined}>
             <div className="sheets-header">
               <h3>טבלאות</h3>
               <button className="icon-btn" onClick={() => setShowNewSheet(true)} title="טבלה חדשה" type="button"><Plus size={16} /></button>
@@ -1015,12 +1028,28 @@ export default function ExcelWriter() {
             {activeSheet ? (
               <>
                 <div className="excel-toolbar">
-                  <span className="excel-sheet-name">{activeSheetData?.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <button
+                      className="icon-btn"
+                      title={sheetsCollapsed ? 'הצג פאנל טבלאות' : 'הסתר פאנל טבלאות'}
+                      onClick={() => setSheetsCollapsed(prev => !prev)}
+                    >
+                      {sheetsCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+                    </button>
+                    <span className="excel-sheet-name">{activeSheetData?.name}</span>
+                  </div>
                   <div className="excel-actions">
                     <button className="btn btn-secondary btn-sm" onClick={addColumn}><Plus size={12} /> עמודה</button>
                     <button className="btn btn-secondary btn-sm" onClick={addRow}><Plus size={12} /> שורה</button>
                     <button className="btn btn-primary btn-sm" onClick={saveSheet} disabled={saving}>
                       <Save size={12} /> {saving ? 'שומר...' : 'שמירה'}
+                    </button>
+                    <button
+                      className="icon-btn"
+                      title={fullscreen ? 'צא ממסך מלא' : 'מסך מלא'}
+                      onClick={() => { setFullscreen(prev => !prev); setSheetsCollapsed(prev => !prev); }}
+                    >
+                      {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                     </button>
                   </div>
                 </div>

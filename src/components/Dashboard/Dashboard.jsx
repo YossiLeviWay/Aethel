@@ -136,6 +136,7 @@ export default function Dashboard() {
   // Filtered events and holidays
   const filteredEvents = events.filter(e => !e.category || !hiddenEventCategories.includes(e.category));
   const filteredHolidays = holidays.filter(h => !h.type || !hiddenHolidayTypes.includes(h.type));
+  const filteredTodayHolidays = todayHolidays.filter(h => !h.type || !hiddenHolidayTypes.includes(h.type));
 
   // Close filter popups when clicking outside
   useEffect(() => {
@@ -674,14 +675,14 @@ export default function Dashboard() {
         )}
 
         {/* Today Highlight */}
-        {todayHolidays.length > 0 && (
+        {filteredTodayHolidays.length > 0 && (
           <div className="dashboard-today">
             <div className="today-icon">
               <Star size={18} />
             </div>
             <div className="today-content">
               <span className="today-label">היום:</span>
-              {todayHolidays.map((h, i) => (
+              {filteredTodayHolidays.map((h, i) => (
                 <span key={i} className="today-holiday" style={{ background: h.color }}>
                   {h.name}
                 </span>

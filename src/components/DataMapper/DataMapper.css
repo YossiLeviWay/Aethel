@@ -4,6 +4,19 @@
   height: calc(100vh - 115px);
 }
 
+/* Fullscreen: hide app sidebar */
+body.excel-fullscreen .sidebar {
+  display: none;
+}
+
+body.excel-fullscreen .app-main {
+  width: 100vw;
+}
+
+body.excel-fullscreen .excel-layout {
+  height: calc(100vh - 115px);
+}
+
 .sheets-panel {
   width: 220px;
   background: #fff;
