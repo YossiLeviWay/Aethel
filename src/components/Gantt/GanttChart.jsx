@@ -483,6 +483,11 @@ export default function GanttChart() {
                         className={`gantt-date-header-cell ${!isCurrentMonth ? 'gantt-cell--dim' : ''} ${isToday ? 'gantt-cell--today' : ''}`}
                         style={{ width: `${(visibleColumnWidths[vi] / totalFlex) * 100}%` }}
                       >
+                        {(getHolidaysForCell(date)).length > 0 && (
+                          <div className="gantt-holiday-tag" title={getHolidaysForCell(date).map(h => h.name).join(', ')}>
+                            {getHolidaysForCell(date)[0].name}
+                          </div>
+                        )}
                         <span className="gantt-date-header-num">{date.getDate()}</span>
                         <span className="gantt-date-header-full">{date.toLocaleDateString('he-IL', { month: '2-digit', year: 'numeric' })}</span>
                       </td>
@@ -501,7 +506,6 @@ export default function GanttChart() {
                       const isCurrentMonth = date.getMonth() === month;
                       const isToday = dateKey(date) === dateKey(new Date());
                       const cellEvents = getEventsForCell(date, cat);
-                      const cellHolidays = ci === 0 ? getHolidaysForCell(date) : [];
                       const isHoliday = (holidaysByDate[dateKey(date)] || []).some(h => h.isVacation && !h.isSchoolDay);
                       const isLastVisible = vi === visibleDays.length - 1;
 
@@ -515,11 +519,6 @@ export default function GanttChart() {
                           }}
                           onClick={() => handleCellClick(date, cat)}
                         >
-                          {cellHolidays.length > 0 && (
-                            <div className="gantt-holiday-tag" title={cellHolidays.map(h => h.name).join(', ')}>
-                              {cellHolidays[0].name}
-                            </div>
-                          )}
                           <div className="gantt-cell-cat">{cat}</div>
                           {cellEvents.map(ev => (
                             <div

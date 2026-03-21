@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator } from 'lucide-react';
 import './Editors.css';
 
@@ -217,11 +217,20 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     }
   }, [selectedCell, cells]);
 
-  function handleCellClick(cellRef, ri, ci) {
+  function handleCellClick(cellRef, ri, ci, e) {
     if (readOnly) return;
     setSelectedCell(cellRef);
     setEditingCell(null);
-    setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
+    if (e?.shiftKey && selection) {
+      // Extend selection
+      setSelection(prev => ({ ...prev, endRow: ri, endCol: ci }));
+    } else {
+      setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
+    }
+    // Focus the clicked cell
+    setTimeout(() => {
+      tableRef.current?.querySelector(`td[data-ref="${cellRef}"]`)?.focus();
+    }, 0);
   }
 
   function handleCellDoubleClick(cellRef) {
@@ -248,11 +257,20 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     triggerSave(newCells, headers, numCols, numRows);
   }
 
-  function navigateTo(row, col) {
+  function navigateTo(row, col, extendSelection = false) {
     if (row < 0 || col < 0 || row >= numRows || col >= numCols) return;
     const ref = getColLetter(col) + (row + 1);
     setSelectedCell(ref);
-    setSelection({ startRow: row, startCol: col, endRow: row, endCol: col });
+    setEditingCell(null);
+    if (extendSelection && selection) {
+      setSelection(prev => ({ ...prev, endRow: row, endCol: col }));
+    } else {
+      setSelection({ startRow: row, startCol: col, endRow: row, endCol: col });
+    }
+    // Focus the cell after render
+    setTimeout(() => {
+      tableRef.current?.querySelector(`td[data-ref="${ref}"]`)?.focus();
+    }, 0);
   }
 
   function handleCellKeyDown(e, cellRef) {
@@ -277,10 +295,11 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
       }
     } else {
       // Navigation mode
-      if (e.key === 'ArrowDown') { e.preventDefault(); navigateTo(ref.row + 1, ref.col); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); navigateTo(ref.row - 1, ref.col); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); navigateTo(ref.row, ref.col - 1); } // RTL
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); navigateTo(ref.row, ref.col + 1); } // RTL
+      const shift = e.shiftKey;
+      if (e.key === 'ArrowDown') { e.preventDefault(); navigateTo(ref.row + 1, ref.col, shift); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); navigateTo(ref.row - 1, ref.col, shift); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); navigateTo(ref.row, ref.col - 1, shift); } // RTL
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); navigateTo(ref.row, ref.col + 1, shift); } // RTL
       else if (e.key === 'Enter' || e.key === 'F2') {
         e.preventDefault();
         setEditingCell(cellRef);
@@ -295,7 +314,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
         e.preventDefault();
         commitCell(cellRef, '');
       } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-        // Start editing with typed character
+        // Start editing with typed character - preventDefault to avoid duplication
+        e.preventDefault();
         setEditingCell(cellRef);
         setFormulaValue(e.key);
         setTimeout(() => cellInputRef.current?.focus(), 0);
@@ -592,7 +612,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                     <td
                       key={ci}
                       className={`cell${isSelected ? ' cell--selected' : ''}${inSelection && !isSelected ? ' cell--in-selection' : ''}`}
-                      onClick={() => handleCellClick(cellRefStr, ri, ci)}
+                      data-ref={cellRefStr}
+                      onClick={(e) => handleCellClick(cellRefStr, ri, ci, e)}
                       onDoubleClick={() => handleCellDoubleClick(cellRefStr)}
                       onKeyDown={(e) => handleCellKeyDown(e, cellRefStr)}
                       tabIndex={isSelected ? 0 : -1}

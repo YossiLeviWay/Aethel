@@ -256,6 +256,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tree-file-folder-tag {
+  font-size: 0.6rem;
+  color: #94a3b8;
+  background: #f1f5f9;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .tree-empty {
@@ -419,6 +432,33 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.autosave-status {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.autosave-dot-inline {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+}
+
+.autosave-dot-inline--saving {
+  background: #f59e0b;
+  animation: pulse-dot-inline 1s infinite;
+}
+
+@keyframes pulse-dot-inline {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 .file-editor-body {

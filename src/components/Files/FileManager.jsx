@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db, storage } from '../../firebase';
 import PermissionsMenu from '../Shared/PermissionsMenu';
@@ -65,7 +65,9 @@ export default function FileManager() {
   const [expandedFolders, setExpandedFolders] = useState({});
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [fullscreen, setFullscreen] = useState(false);
-  const [createInFolder, setCreateInFolder] = useState(null); // folder id for new file creation
+  const [createInFolder, setCreateInFolder] = useState(null);
+  const autoSaveTimerRef = useRef(null);
+  const lastSavedContentRef = useRef(null);
 
   const schoolId = selectedSchool || userData?.schoolId;
   const canManage = isPrincipal() || isGlobalAdmin();
@@ -204,12 +206,36 @@ export default function FileManager() {
         lastModified: new Date().toISOString(),
         lastModifiedBy: userData?.fullName || ''
       });
+      lastSavedContentRef.current = content;
       setEditingFile(prev => ({ ...prev, content }));
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message);
     }
     setFileSaving(false);
   }
+
+  // Auto-save: debounce 1 second after last change
+  const autoSave = useCallback((content) => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      if (content !== lastSavedContentRef.current) {
+        saveFileContent(content);
+      }
+    }, 1000);
+  }, [editingFile?.id, schoolId]);
+
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, []);
+
+  // Track initial content when opening a file
+  useEffect(() => {
+    if (editingFile) {
+      lastSavedContentRef.current = editingFile.content;
+    }
+  }, [editingFile?.id]);
 
   async function deleteFolder(folderId) {
     if (!confirm('האם למחוק תיקייה זו וכל תוכנה?')) return;
@@ -262,6 +288,43 @@ export default function FileManager() {
     setSelectedFolder(folderId);
   }
 
+  function getFolderTooltip(folder) {
+    const parts = [];
+    if (folder.createdAt) {
+      const d = new Date(folder.createdAt);
+      parts.push(`נוצר: ${d.toLocaleDateString('he-IL')} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`);
+    }
+    if (folder.createdBy) parts.push(`יוצר: ${folder.createdBy}`);
+    if (folder.visibility === 'principal_only') parts.push('הרשאה: מנהל בלבד');
+    else if (folder.allowedUsers?.length) parts.push(`הרשאות: ${folder.allowedUsers.length} משתמשים`);
+    else parts.push('הרשאה: כולם');
+    return parts.join('\n');
+  }
+
+  function getFileTooltip(f) {
+    const parts = [];
+    if (f.createdAt) {
+      const d = new Date(f.createdAt);
+      parts.push(`נוצר: ${d.toLocaleDateString('he-IL')} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`);
+    }
+    if (f.uploadedBy) parts.push(`העלה: ${f.uploadedBy}`);
+    if (f.lastModified) {
+      const d = new Date(f.lastModified);
+      parts.push(`עודכן: ${d.toLocaleDateString('he-IL')} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`);
+    }
+    if (f.lastModifiedBy) parts.push(`עודכן ע"י: ${f.lastModifiedBy}`);
+    const folder = folders.find(fd => fd.id === f.folderId);
+    if (folder) parts.push(`תיקייה: ${folder.name}`);
+    return parts.join('\n');
+  }
+
+  function getFolderNameForFile(fileId) {
+    const file = files.find(f => f.id === fileId);
+    if (!file) return '';
+    const folder = folders.find(f => f.id === file.folderId);
+    return folder?.name || '';
+  }
+
   // Sort folders: pinned first, then alphabetical
   const sortedFolders = [...folders]
     .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()) ||
@@ -303,6 +366,7 @@ export default function FileManager() {
           <div
             className={`tree-folder-item ${isSelected ? 'tree-folder-item--active' : ''}`}
             onClick={() => toggleFolder(folder.id)}
+            title={getFolderTooltip(folder)}
             onContextMenu={e => {
               if (!canManage) return;
               e.preventDefault();
@@ -345,6 +409,7 @@ export default function FileManager() {
                     key={f.id}
                     className={`tree-file-item ${editingFile?.id === f.id ? 'tree-file-item--active' : ''} ${isPinned ? 'tree-file-item--pinned' : ''}`}
                     onClick={() => openFile(f)}
+                    title={getFileTooltip(f)}
                     onContextMenu={e => {
                       if (!canManage) return;
                       e.preventDefault();
@@ -443,25 +508,32 @@ export default function FileManager() {
                     <span>נעוצים</span>
                   </div>
                   {renderFolderTree(pinnedFolders)}
-                  {pinnedFiles.filter(f => !pinnedFolders.some(pf => pf.id === f.folderId)).map(f => (
-                    <div
-                      key={`pinned-${f.id}`}
-                      className={`tree-file-item tree-file-item--pinned-standalone ${editingFile?.id === f.id ? 'tree-file-item--active' : ''}`}
-                      onClick={() => openFile(f)}
-                    >
-                      {getFileIcon(f, 13)}
-                      <span className="tree-file-name">{f.name}</span>
-                      <div className="tree-item-actions" onClick={e => e.stopPropagation()}>
-                        <button
-                          className="tree-pin-btn tree-pin-btn--active"
-                          title="הסר נעיצה"
-                          onClick={() => togglePinFile(f.id, true)}
-                        >
-                          <Pin size={10} style={{ color: '#2563eb' }} />
-                        </button>
+                  {pinnedFiles.filter(f => !pinnedFolders.some(pf => pf.id === f.folderId)).map(f => {
+                    const folderName = getFolderNameForFile(f.id);
+                    return (
+                      <div
+                        key={`pinned-${f.id}`}
+                        className={`tree-file-item tree-file-item--pinned-standalone ${editingFile?.id === f.id ? 'tree-file-item--active' : ''}`}
+                        onClick={() => openFile(f)}
+                        title={getFileTooltip(f)}
+                      >
+                        {getFileIcon(f, 13)}
+                        <span className="tree-file-name">
+                          {f.name}
+                          {folderName && <span className="tree-file-folder-tag">{folderName}</span>}
+                        </span>
+                        <div className="tree-item-actions" onClick={e => e.stopPropagation()}>
+                          <button
+                            className="tree-pin-btn tree-pin-btn--active"
+                            title="הסר נעיצה"
+                            onClick={() => togglePinFile(f.id, true)}
+                          >
+                            <Pin size={10} style={{ color: '#2563eb' }} />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div className="tree-section-divider" />
                 </>
               )}
@@ -507,13 +579,17 @@ export default function FileManager() {
                         {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                       </button>
                     )}
+                    <span className="autosave-status">
+                      <span className={`autosave-dot-inline ${fileSaving ? 'autosave-dot-inline--saving' : ''}`} />
+                      {fileSaving ? 'שומר...' : 'שמירה אוטומטית'}
+                    </span>
                     <button
                       className="btn btn-primary btn-sm"
                       onClick={() => saveFileContent(editingFile.content)}
                       disabled={fileSaving}
                     >
                       <Save size={14} />
-                      {fileSaving ? 'שומר...' : 'שמירה'}
+                      שמירה
                     </button>
                   </div>
                 </div>
@@ -521,14 +597,21 @@ export default function FileManager() {
                   {editingFile.fileType === 'spreadsheet' ? (
                     <SpreadsheetEditor
                       data={typeof editingFile.content === 'string' ? JSON.parse(editingFile.content) : editingFile.content}
-                      onChange={(newData) => setEditingFile(prev => ({ ...prev, content: JSON.stringify(newData) }))}
+                      onChange={(newData) => {
+                        const json = JSON.stringify(newData);
+                        setEditingFile(prev => ({ ...prev, content: json }));
+                        autoSave(json);
+                      }}
                       onToggleFullscreen={() => setFullscreen(!fullscreen)}
                       isFullscreen={fullscreen}
                     />
                   ) : (
                     <DocumentEditor
                       content={editingFile.content || ''}
-                      onChange={(newContent) => setEditingFile(prev => ({ ...prev, content: newContent }))}
+                      onChange={(newContent) => {
+                        setEditingFile(prev => ({ ...prev, content: newContent }));
+                        autoSave(newContent);
+                      }}
                     />
                   )}
                 </div>
