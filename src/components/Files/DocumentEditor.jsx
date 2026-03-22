@@ -11,6 +11,8 @@ import {
   Minus,
   Palette,
   Type,
+  Table,
+  Pilcrow,
 } from 'lucide-react';
 import './Editors.css';
 
@@ -27,12 +29,32 @@ const TEXT_COLORS = [
   { label: 'Brown', value: '#a16207' },
 ];
 
+const FONT_FAMILIES = [
+  { label: 'Inter', value: "'Inter', sans-serif" },
+  { label: 'Arial', value: 'Arial, sans-serif' },
+  { label: 'David', value: "'David Libre', David, serif" },
+  { label: 'Frank Ruhl', value: "'Frank Ruhl Libre', serif" },
+  { label: 'Rubik', value: "'Rubik', sans-serif" },
+  { label: 'Heebo', value: "'Heebo', sans-serif" },
+  { label: 'Assistant', value: "'Assistant', sans-serif" },
+  { label: 'Times New Roman', value: "'Times New Roman', serif" },
+  { label: 'Courier New', value: "'Courier New', monospace" },
+  { label: 'Georgia', value: 'Georgia, serif' },
+];
+
+const FONT_SIZES = ['10', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48'];
+
 export default function DocumentEditor({ content, onChange, readOnly = false }) {
   const editorRef = useRef(null);
   const [showColors, setShowColors] = useState(false);
+  const [showTableDialog, setShowTableDialog] = useState(false);
+  const [tableRows, setTableRows] = useState(3);
+  const [tableCols, setTableCols] = useState(3);
+  const [textDirection, setTextDirection] = useState('rtl');
   const [saveStatus, setSaveStatus] = useState('saved');
   const saveTimerRef = useRef(null);
   const colorBtnRef = useRef(null);
+  const tableBtnRef = useRef(null);
 
   // Initialize content
   useEffect(() => {
@@ -49,12 +71,15 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
       if (colorBtnRef.current && !colorBtnRef.current.contains(e.target)) {
         setShowColors(false);
       }
+      if (tableBtnRef.current && !tableBtnRef.current.contains(e.target)) {
+        setShowTableDialog(false);
+      }
     }
-    if (showColors) {
+    if (showColors || showTableDialog) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showColors]);
+  }, [showColors, showTableDialog]);
 
   useEffect(() => {
     return () => {
@@ -79,42 +104,6 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
     triggerSave();
   }
 
-  function handleBold() {
-    execCommand('bold');
-  }
-
-  function handleItalic() {
-    execCommand('italic');
-  }
-
-  function handleUnderline() {
-    execCommand('underline');
-  }
-
-  function handleAlignRight() {
-    execCommand('justifyRight');
-  }
-
-  function handleAlignCenter() {
-    execCommand('justifyCenter');
-  }
-
-  function handleAlignLeft() {
-    execCommand('justifyLeft');
-  }
-
-  function handleBulletList() {
-    execCommand('insertUnorderedList');
-  }
-
-  function handleNumberedList() {
-    execCommand('insertOrderedList');
-  }
-
-  function handleHorizontalLine() {
-    execCommand('insertHorizontalRule');
-  }
-
   function handleHeadingChange(e) {
     const value = e.target.value;
     if (value === 'p') {
@@ -124,9 +113,55 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
     }
   }
 
+  function handleFontChange(e) {
+    const font = e.target.value;
+    if (font) {
+      execCommand('fontName', font);
+    }
+  }
+
+  function handleFontSizeChange(e) {
+    const size = e.target.value;
+    if (!size) return;
+    // execCommand fontSize only supports 1-7, so we use insertHTML with span
+    const sel = window.getSelection();
+    if (sel.rangeCount > 0 && !sel.isCollapsed) {
+      const range = sel.getRangeAt(0);
+      const span = document.createElement('span');
+      span.style.fontSize = size + 'px';
+      range.surroundContents(span);
+      triggerSave();
+    }
+  }
+
   function handleColor(color) {
     execCommand('foreColor', color);
     setShowColors(false);
+  }
+
+  function toggleDirection() {
+    const newDir = textDirection === 'rtl' ? 'ltr' : 'rtl';
+    setTextDirection(newDir);
+    if (editorRef.current) {
+      editorRef.current.setAttribute('dir', newDir);
+      editorRef.current.style.textAlign = newDir === 'rtl' ? 'right' : 'left';
+    }
+    triggerSave();
+  }
+
+  function insertTable() {
+    if (tableCols < 1 || tableRows < 1) return;
+    let html = '<table><tbody>';
+    for (let r = 0; r < tableRows; r++) {
+      html += '<tr>';
+      for (let c = 0; c < tableCols; c++) {
+        html += '<td>&nbsp;</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table><p></p>';
+    execCommand('insertHTML', html);
+    setShowTableDialog(false);
   }
 
   function handleInput() {
@@ -134,7 +169,6 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
   }
 
   function handleKeyDown(e) {
-    // Allow tab for indentation
     if (e.key === 'Tab') {
       e.preventDefault();
       execCommand('insertHTML', '&emsp;');
@@ -146,6 +180,24 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
       {/* Toolbar */}
       {!readOnly && (
         <div className="document-toolbar">
+          {/* Font family */}
+          <select className="toolbar-select toolbar-select--font" onChange={handleFontChange} defaultValue="">
+            <option value="" disabled>גופן</option>
+            {FONT_FAMILIES.map(f => (
+              <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>
+            ))}
+          </select>
+
+          {/* Font size */}
+          <select className="toolbar-select toolbar-select--size" onChange={handleFontSizeChange} defaultValue="">
+            <option value="" disabled>גודל</option>
+            {FONT_SIZES.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          <div className="toolbar-separator" />
+
           {/* Heading select */}
           <select className="toolbar-select" onChange={handleHeadingChange} defaultValue="p">
             <option value="p">פסקה</option>
@@ -158,28 +210,37 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
 
           {/* Text formatting */}
           <div className="toolbar-group">
-            <button className="toolbar-btn" onClick={handleBold} title="מודגש">
+            <button className="toolbar-btn" onClick={() => execCommand('bold')} title="מודגש">
               <Bold size={16} />
             </button>
-            <button className="toolbar-btn" onClick={handleItalic} title="נטוי">
+            <button className="toolbar-btn" onClick={() => execCommand('italic')} title="נטוי">
               <Italic size={16} />
             </button>
-            <button className="toolbar-btn" onClick={handleUnderline} title="קו תחתון">
+            <button className="toolbar-btn" onClick={() => execCommand('underline')} title="קו תחתון">
               <Underline size={16} />
             </button>
           </div>
 
           <div className="toolbar-separator" />
 
+          {/* Text direction */}
+          <button
+            className={`toolbar-btn toolbar-btn--direction`}
+            onClick={toggleDirection}
+            title={textDirection === 'rtl' ? 'שנה לשמאל-לימין' : 'שנה לימין-לשמאל'}
+          >
+            {textDirection === 'rtl' ? 'RTL' : 'LTR'}
+          </button>
+
           {/* Text alignment */}
           <div className="toolbar-group">
-            <button className="toolbar-btn" onClick={handleAlignRight} title="יישור לימין">
+            <button className="toolbar-btn" onClick={() => execCommand('justifyRight')} title="יישור לימין">
               <AlignRight size={16} />
             </button>
-            <button className="toolbar-btn" onClick={handleAlignCenter} title="יישור למרכז">
+            <button className="toolbar-btn" onClick={() => execCommand('justifyCenter')} title="יישור למרכז">
               <AlignCenter size={16} />
             </button>
-            <button className="toolbar-btn" onClick={handleAlignLeft} title="יישור לשמאל">
+            <button className="toolbar-btn" onClick={() => execCommand('justifyLeft')} title="יישור לשמאל">
               <AlignLeft size={16} />
             </button>
           </div>
@@ -188,10 +249,10 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
 
           {/* Lists */}
           <div className="toolbar-group">
-            <button className="toolbar-btn" onClick={handleBulletList} title="רשימת תבליטים">
+            <button className="toolbar-btn" onClick={() => execCommand('insertUnorderedList')} title="רשימת תבליטים">
               <List size={16} />
             </button>
-            <button className="toolbar-btn" onClick={handleNumberedList} title="רשימה ממוספרת">
+            <button className="toolbar-btn" onClick={() => execCommand('insertOrderedList')} title="רשימה ממוספרת">
               <ListOrdered size={16} />
             </button>
           </div>
@@ -222,8 +283,47 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
             )}
           </div>
 
+          {/* Table insert */}
+          <div className="color-btn-wrapper" ref={tableBtnRef}>
+            <button
+              className={`toolbar-btn${showTableDialog ? ' active' : ''}`}
+              onClick={() => setShowTableDialog(!showTableDialog)}
+              title="הוספת טבלה"
+            >
+              <Table size={16} />
+            </button>
+            {showTableDialog && (
+              <div className="table-insert-dialog">
+                <label>
+                  שורות:
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={tableRows}
+                    onChange={e => setTableRows(parseInt(e.target.value) || 1)}
+                  />
+                </label>
+                <label>
+                  עמודות:
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={tableCols}
+                    onChange={e => setTableCols(parseInt(e.target.value) || 1)}
+                  />
+                </label>
+                <div className="table-insert-actions">
+                  <button className="btn btn-primary btn-sm" onClick={insertTable}>הוסף</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setShowTableDialog(false)}>ביטול</button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Horizontal line */}
-          <button className="toolbar-btn" onClick={handleHorizontalLine} title="קו אופקי">
+          <button className="toolbar-btn" onClick={() => execCommand('insertHorizontalRule')} title="קו אופקי">
             <Minus size={16} />
           </button>
         </div>
@@ -238,7 +338,8 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
           onInput={handleInput}
           onKeyDown={handleKeyDown}
           suppressContentEditableWarning
-          dir="rtl"
+          dir={textDirection}
+          style={{ textAlign: textDirection === 'rtl' ? 'right' : 'left' }}
         />
       </div>
 
