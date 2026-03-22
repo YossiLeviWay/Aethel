@@ -39,7 +39,11 @@ import {
   ChevronDown,
   ChevronLeft,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Share2,
+  Pencil,
+  Info,
+  MoreVertical
 } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Files.css';
@@ -66,6 +70,10 @@ export default function FileManager() {
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [createInFolder, setCreateInFolder] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [renamingItem, setRenamingItem] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [viewerContextMenu, setViewerContextMenu] = useState(null);
   const autoSaveTimerRef = useRef(null);
   const lastSavedContentRef = useRef(null);
 
@@ -325,6 +333,81 @@ export default function FileManager() {
     return folder?.name || '';
   }
 
+  // Screen-aware context menu positioning
+  function getMenuPosition(x, y, menuWidth = 200, menuHeight = 200) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    return {
+      x: x + menuWidth > vw ? Math.max(0, x - menuWidth) : x,
+      y: y + menuHeight > vh ? Math.max(0, y - menuHeight) : y
+    };
+  }
+
+  function handleContextMenu(e, type, item) {
+    e.preventDefault();
+    e.stopPropagation();
+    const pos = getMenuPosition(e.clientX, e.clientY);
+    setContextMenu({ type, item, position: pos });
+    setViewerContextMenu(null);
+  }
+
+  function handleViewerContextMenu(e) {
+    e.preventDefault();
+    if (editingFile) return; // no context menu when editing
+    const pos = getMenuPosition(e.clientX, e.clientY, 180, 160);
+    setViewerContextMenu({ position: pos });
+    setContextMenu(null);
+  }
+
+  // Close context menus on click outside
+  useEffect(() => {
+    function handleClick() {
+      setContextMenu(null);
+      setViewerContextMenu(null);
+    }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
+
+  async function renameItem() {
+    if (!renamingItem || !renameValue.trim()) return;
+    try {
+      if (renamingItem.type === 'folder') {
+        await updateDoc(doc(db, `folders_${schoolId}`, renamingItem.id), { name: renameValue.trim() });
+      } else {
+        await updateDoc(doc(db, `files_${schoolId}`, renamingItem.id), { name: renameValue.trim() });
+      }
+    } catch (err) {
+      alert('שגיאה בשינוי שם: ' + err.message);
+    }
+    setRenamingItem(null);
+    setRenameValue('');
+  }
+
+  function startRename(type, item) {
+    setRenamingItem({ type, id: item.id });
+    setRenameValue(item.name);
+    setContextMenu(null);
+  }
+
+  function getFileInfo(f) {
+    const parts = [];
+    parts.push(`שם: ${f.name}`);
+    if (f.createdAt) {
+      const d = new Date(f.createdAt);
+      parts.push(`נוצר: ${d.toLocaleDateString('he-IL')} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`);
+    }
+    if (f.uploadedBy) parts.push(`יוצר: ${f.uploadedBy}`);
+    if (f.lastModified) {
+      const d = new Date(f.lastModified);
+      parts.push(`עודכן: ${d.toLocaleDateString('he-IL')} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`);
+    }
+    if (f.lastModifiedBy) parts.push(`עודכן ע"י: ${f.lastModifiedBy}`);
+    if (f.fileType) parts.push(`סוג: ${f.fileType === 'spreadsheet' ? 'גיליון' : f.fileType === 'document' ? 'מסמך' : 'קובץ'}`);
+    if (f.size) parts.push(`גודל: ${formatSize(f.size)}`);
+    alert(parts.join('\n'));
+  }
+
   // Sort folders: pinned first, then alphabetical
   const sortedFolders = [...folders]
     .filter(f => !fileSearch.trim() || f.name.toLowerCase().includes(fileSearch.toLowerCase()) ||
@@ -367,17 +450,19 @@ export default function FileManager() {
             className={`tree-folder-item ${isSelected ? 'tree-folder-item--active' : ''}`}
             onClick={() => toggleFolder(folder.id)}
             title={getFolderTooltip(folder)}
-            onContextMenu={e => {
-              if (!canManage) return;
-              e.preventDefault();
-              setPermMenu({ type: 'folder', id: folder.id, name: folder.name, position: { x: e.clientX, y: e.clientY } });
-            }}
+            onContextMenu={e => handleContextMenu(e, 'folder', folder)}
           >
             <span className="tree-chevron">
               {isExpanded ? <ChevronDown size={12} /> : <ChevronLeft size={12} />}
             </span>
             {isExpanded ? <FolderOpen size={15} /> : <Folder size={15} />}
-            <span className="tree-folder-name">{folder.name}</span>
+            {renamingItem?.type === 'folder' && renamingItem.id === folder.id ? (
+              <form className="rename-form-inline" onSubmit={e => { e.preventDefault(); renameItem(); }} onClick={e => e.stopPropagation()}>
+                <input value={renameValue} onChange={e => setRenameValue(e.target.value)} autoFocus onBlur={renameItem} />
+              </form>
+            ) : (
+              <span className="tree-folder-name">{folder.name}</span>
+            )}
             {folder.visibility === 'principal_only' && <Lock size={10} className="folder-lock" />}
             <span className="tree-folder-count">{folderFiles.length}</span>
             <div className="tree-item-actions" onClick={e => e.stopPropagation()}>
@@ -410,14 +495,16 @@ export default function FileManager() {
                     className={`tree-file-item ${editingFile?.id === f.id ? 'tree-file-item--active' : ''} ${isPinned ? 'tree-file-item--pinned' : ''}`}
                     onClick={() => openFile(f)}
                     title={getFileTooltip(f)}
-                    onContextMenu={e => {
-                      if (!canManage) return;
-                      e.preventDefault();
-                      setPermMenu({ type: 'file', id: f.id, name: f.name, position: { x: e.clientX, y: e.clientY } });
-                    }}
+                    onContextMenu={e => handleContextMenu(e, 'file', f)}
                   >
                     {getFileIcon(f, 13)}
-                    <span className="tree-file-name">{f.name}</span>
+                    {renamingItem?.type === 'file' && renamingItem.id === f.id ? (
+                      <form className="rename-form-inline" onSubmit={e => { e.preventDefault(); renameItem(); }} onClick={e => e.stopPropagation()}>
+                        <input value={renameValue} onChange={e => setRenameValue(e.target.value)} autoFocus onBlur={renameItem} />
+                      </form>
+                    ) : (
+                      <span className="tree-file-name">{f.name}</span>
+                    )}
                     <div className="tree-item-actions" onClick={e => e.stopPropagation()}>
                       <button
                         className={`tree-pin-btn ${isPinned ? 'tree-pin-btn--active' : ''}`}
@@ -675,11 +762,11 @@ export default function FileManager() {
                   </form>
                 )}
 
-                <div className="file-grid">
+                <div className="file-grid" onContextMenu={handleViewerContextMenu}>
                   {getFilesForFolder(selectedFolder).map(f => {
                     const isPinned = f.pinnedBy?.includes(uid);
                     return (
-                      <div key={f.id} className={`file-card ${isPinned ? 'file-card--pinned' : ''}`} onClick={() => openFile(f)}>
+                      <div key={f.id} className={`file-card ${isPinned ? 'file-card--pinned' : ''}`} onClick={() => openFile(f)} onContextMenu={e => handleContextMenu(e, 'file', f)}>
                         <div className="file-card-icon">{getFileIcon(f, 28)}</div>
                         <div className="file-card-info">
                           <div className="file-card-name">{f.name}</div>
@@ -728,6 +815,127 @@ export default function FileManager() {
           </div>
         </div>
       </div>
+
+      {/* Context Menu (right-click on files/folders) */}
+      {contextMenu && (
+        <div
+          className="context-menu"
+          style={{ top: contextMenu.position.y, left: contextMenu.position.x }}
+          onClick={e => e.stopPropagation()}
+        >
+          {canManage && (
+            <button className="context-menu-item" onClick={() => {
+              setPermMenu({
+                type: contextMenu.type,
+                id: contextMenu.item.id,
+                name: contextMenu.item.name,
+                position: contextMenu.position
+              });
+              setContextMenu(null);
+            }}>
+              <Share2 size={14} />
+              שיתוף
+            </button>
+          )}
+          <button className="context-menu-item" onClick={() => startRename(contextMenu.type, contextMenu.item)}>
+            <Pencil size={14} />
+            שינוי שם
+          </button>
+          <button className="context-menu-item" onClick={() => {
+            getFileInfo(contextMenu.item);
+            setContextMenu(null);
+          }}>
+            <Info size={14} />
+            מידע
+          </button>
+          {contextMenu.type === 'file' && contextMenu.item.url && (
+            <a
+              href={contextMenu.item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="context-menu-item"
+              onClick={() => setContextMenu(null)}
+              style={{ textDecoration: 'none' }}
+            >
+              <Download size={14} />
+              הורדה
+            </a>
+          )}
+          <div className="context-menu-divider" />
+          {canManage && (
+            <button className="context-menu-item context-menu-item--danger" onClick={() => {
+              if (contextMenu.type === 'folder') deleteFolder(contextMenu.item.id);
+              else deleteFile(contextMenu.item);
+              setContextMenu(null);
+            }}>
+              <Trash2 size={14} />
+              מחיקה
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Viewer panel context menu */}
+      {viewerContextMenu && selectedFolder && (
+        <div
+          className="context-menu"
+          style={{ top: viewerContextMenu.position.y, left: viewerContextMenu.position.x }}
+          onClick={e => e.stopPropagation()}
+        >
+          {userCanCreateFiles() && (
+            <>
+              <button className="context-menu-item" onClick={() => {
+                setNewFileType('spreadsheet');
+                setCreateInFolder(selectedFolder);
+                setViewerContextMenu(null);
+              }}>
+                <Table2 size={14} />
+                גיליון חדש
+              </button>
+              <button className="context-menu-item" onClick={() => {
+                setNewFileType('document');
+                setCreateInFolder(selectedFolder);
+                setViewerContextMenu(null);
+              }}>
+                <FileEdit size={14} />
+                מסמך חדש
+              </button>
+              <div className="context-menu-divider" />
+            </>
+          )}
+          <button className="context-menu-item" onClick={() => {
+            const folder = folders.find(f => f.id === selectedFolder);
+            if (folder) {
+              const info = [];
+              info.push(`שם: ${folder.name}`);
+              if (folder.createdAt) {
+                const d = new Date(folder.createdAt);
+                info.push(`נוצר: ${d.toLocaleDateString('he-IL')} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`);
+              }
+              if (folder.createdBy) info.push(`יוצר: ${folder.createdBy}`);
+              const folderFiles = files.filter(f => f.folderId === selectedFolder);
+              info.push(`מספר קבצים: ${folderFiles.length}`);
+              alert(info.join('\n'));
+            }
+            setViewerContextMenu(null);
+          }}>
+            <Info size={14} />
+            מידע על התיקייה
+          </button>
+          {canManage && (
+            <>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item context-menu-item--danger" onClick={() => {
+                deleteFolder(selectedFolder);
+                setViewerContextMenu(null);
+              }}>
+                <Trash2 size={14} />
+                מחיקת תיקייה
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Permissions Menu */}
       {permMenu && (

@@ -638,6 +638,236 @@
   animation: pulse-dot 1s infinite;
 }
 
+/* Color picker popup (Spreadsheet) */
+.color-picker-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  padding: 0.5rem;
+  min-width: 160px;
+}
+
+.color-picker-popup .color-picker-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 0.3rem;
+  display: block;
+}
+
+.color-picker-popup .color-swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+}
+
+.color-swatch-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: transform 0.1s;
+  padding: 0;
+}
+
+.color-swatch-btn:hover {
+  transform: scale(1.15);
+  border-color: #94a3b8;
+}
+
+.color-swatch-btn--active {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+/* Formula input selecting mode */
+.formula-input--selecting {
+  border-color: #16a34a !important;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15) !important;
+  background: #f0fdf4 !important;
+}
+
+.formula-confirm-btn {
+  padding: 0.2rem 0.5rem;
+  background: #16a34a;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.formula-confirm-btn:hover {
+  background: #15803d;
+}
+
+/* Cell merged indicator */
+.cell--merged {
+  background: #fefce8;
+}
+
+/* Context menu (files/folders right-click) */
+.context-menu {
+  position: fixed;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
+  min-width: 180px;
+  padding: 0.35rem;
+  animation: contextMenuIn 0.12s ease-out;
+}
+
+@keyframes contextMenuIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: none;
+  background: none;
+  font-size: 0.8rem;
+  color: #475569;
+  cursor: pointer;
+  border-radius: 6px;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.12s;
+  text-align: right;
+}
+
+.context-menu-item:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.context-menu-item--danger {
+  color: #ef4444;
+}
+
+.context-menu-item--danger:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 0.25rem 0.4rem;
+}
+
+/* Rename inline form */
+.rename-form-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  background: #f0f9ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  margin: 0.15rem 0;
+}
+
+.rename-form-inline input {
+  flex: 1;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 0.76rem;
+  font-family: 'Inter', sans-serif;
+}
+
+/* Document editor enhancements */
+.document-toolbar .toolbar-select--font {
+  min-width: 110px;
+  max-width: 140px;
+}
+
+.document-toolbar .toolbar-select--size {
+  width: 58px;
+}
+
+.document-toolbar .toolbar-btn--direction {
+  font-size: 0.65rem;
+  font-weight: 700;
+  width: auto;
+  padding: 0 0.4rem;
+}
+
+/* Table insert dialog */
+.table-insert-dialog {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  padding: 0.75rem;
+  min-width: 200px;
+}
+
+.table-insert-dialog label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: #475569;
+  margin-bottom: 0.4rem;
+}
+
+.table-insert-dialog input[type="number"] {
+  width: 50px;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  text-align: center;
+  font-family: 'Inter', sans-serif;
+}
+
+.table-insert-dialog .table-insert-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+}
+
+/* Document editor table styles */
+.document-content-area .editor-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+.document-content-area .editor-content table td,
+.document-content-area .editor-content table th {
+  border: 1px solid #e2e8f0;
+  padding: 0.4rem 0.6rem;
+  min-width: 60px;
+}
+
+.document-content-area .editor-content table th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
 /* --- Responsive --- */
 
 @media (max-width: 768px) {

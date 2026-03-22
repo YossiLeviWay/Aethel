@@ -9,7 +9,6 @@ import CategoryManager from './components/Gantt/CategoryManager';
 import StaffManagement from './components/Staff/StaffManagement';
 import TaskBoard from './components/Tasks/TaskBoard';
 import FileManager from './components/Files/FileManager';
-import ExcelWriter from './components/DataMapper/ExcelWriter';
 import SchoolManagement from './components/Schools/SchoolManagement';
 import Teams from './components/Teams/Teams';
 import Messages from './components/Messages/Messages';
@@ -98,7 +97,6 @@ export default function App() {
             <Route path="staff" element={<ApprovedRoute><SchoolRequiredRoute><StaffManagement /></SchoolRequiredRoute></ApprovedRoute>} />
             <Route path="tasks" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><TaskBoard /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
             <Route path="files" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><FileManager /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
-            <Route path="data" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><ExcelWriter /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
             <Route path="teams" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><Teams /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
             <Route path="messages" element={<ApprovedRoute><Messages /></ApprovedRoute>} />
             <Route path="notifications" element={<ApprovedRoute><Notifications /></ApprovedRoute>} />
