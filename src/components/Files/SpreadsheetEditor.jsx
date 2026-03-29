@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle } from 'lucide-react';
+import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle, Undo2, Redo2 } from 'lucide-react';
 import './Editors.css';
 
 function getColLetter(index) {
@@ -181,6 +181,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   const [isDragging, setIsDragging] = useState(false);
   const [cellContextMenu, setCellContextMenu] = useState(null); // { x, y, type: 'cell'|'row'|'col', row, col }
   const [clipboard, setClipboard] = useState(null); // { cells, type: 'cut'|'copy', startRow, startCol, endRow, endCol }
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
   const saveTimerRef = useRef(null);
   const cellInputRef = useRef(null);
   const formulaInputRef = useRef(null);
@@ -288,6 +290,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   function commitCell(cellRef, rawValue) {
+    pushUndo(cells);
     const newCells = { ...cells };
     const trimmed = (rawValue || '').trim();
     if (!trimmed) {
@@ -612,6 +615,49 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     return () => document.removeEventListener('click', handleClick);
   }, []);
 
+  // Undo/Redo
+  function pushUndo(prevCells) {
+    setUndoStack(us => {
+      const next = [...us, { ...prevCells }];
+      return next.length > 50 ? next.slice(-50) : next;
+    });
+    setRedoStack([]);
+  }
+
+  function handleUndo() {
+    if (undoStack.length === 0) return;
+    const prev = undoStack[undoStack.length - 1];
+    setRedoStack(rs => [...rs, { ...cells }]);
+    setUndoStack(us => us.slice(0, -1));
+    setCells(prev);
+    triggerSave(prev, headers, numCols, numRows);
+  }
+
+  function handleRedo() {
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack(us => [...us, { ...cells }]);
+    setRedoStack(rs => rs.slice(0, -1));
+    setCells(next);
+    triggerSave(next, headers, numCols, numRows);
+  }
+
+  // Global Ctrl+Z / Ctrl+Y
+  useEffect(() => {
+    function handleGlobalKeyDown(e) {
+      if (readOnly) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+    }
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  });
+
   // Context menu for cells/rows/columns
   function handleCellContextMenu(e, ri, ci, type) {
     e.preventDefault();
@@ -626,6 +672,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function cutSelection() {
     if (!selection) return;
+    pushUndo(cells);
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -671,6 +718,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     if (!clipboard || !selectedCell) return;
     const ref = parseCellRef(selectedCell);
     if (!ref) return;
+    pushUndo(cells);
     const newCells = { ...cells };
     for (let r = 0; r < clipboard.rows; r++) {
       for (let c = 0; c < clipboard.cols; c++) {
@@ -690,6 +738,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function clearSelectionContents() {
     if (!selection) return;
+    pushUndo(cells);
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -706,6 +755,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   function insertRowAt(rowIndex) {
+    pushUndo(cells);
     // Shift all cells from rowIndex down by 1
     const newCells = {};
     Object.entries(cells).forEach(([key, val]) => {
@@ -725,6 +775,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   function insertColAt(colIndex) {
+    pushUndo(cells);
     const newCells = {};
     const newHeaders = {};
     Object.entries(cells).forEach(([key, val]) => {
@@ -751,6 +802,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function deleteRowAt(rowIndex) {
     if (numRows <= 1) return;
+    pushUndo(cells);
     const newCells = {};
     Object.entries(cells).forEach(([key, val]) => {
       const parsed = parseCellRef(key);
@@ -772,6 +824,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function deleteColAt(colIndex) {
     if (numCols <= 1) return;
+    pushUndo(cells);
     const newCells = {};
     const newHeaders = {};
     Object.entries(cells).forEach(([key, val]) => {
@@ -820,6 +873,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     });
 
     // Rearrange all columns based on new row order
+    pushUndo(cells);
     const newCells = {};
     rowData.forEach((item, newRow) => {
       for (let c = 0; c < numCols; c++) {
@@ -880,6 +934,9 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     <div className={`spreadsheet-editor ${isFullscreen ? 'spreadsheet-editor--fullscreen' : ''}`}>
       {!readOnly && (
         <div className="spreadsheet-toolbar">
+          <button className="toolbar-btn" onClick={handleUndo} disabled={undoStack.length === 0} title="ביטול (Ctrl+Z)"><Undo2 size={14} /></button>
+          <button className="toolbar-btn" onClick={handleRedo} disabled={redoStack.length === 0} title="חזרה (Ctrl+Y)"><Redo2 size={14} /></button>
+          <div className="toolbar-separator" />
           <button className="toolbar-btn" onClick={addColumn} title="הוסף עמודה"><Plus size={14} /> עמודה</button>
           <button className="toolbar-btn toolbar-btn--danger" onClick={removeColumn} disabled={numCols <= 1} title="הסר עמודה"><Minus size={14} /> עמודה</button>
           <div className="toolbar-separator" />
@@ -1125,6 +1182,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
               </button>
               <div className="context-menu-divider" />
               <button className="context-menu-item" onClick={() => {
+                pushUndo(cells);
                 const newCells = { ...cells };
                 for (let c = 0; c < numCols; c++) delete newCells[getColLetter(c) + (cellContextMenu.row + 1)];
                 setCells(newCells);
@@ -1150,6 +1208,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
               </button>
               <div className="context-menu-divider" />
               <button className="context-menu-item" onClick={() => {
+                pushUndo(cells);
                 const newCells = { ...cells };
                 for (let r = 0; r < numRows; r++) delete newCells[getColLetter(cellContextMenu.col) + (r + 1)];
                 setCells(newCells);

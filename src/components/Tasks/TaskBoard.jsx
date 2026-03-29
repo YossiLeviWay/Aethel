@@ -17,9 +17,12 @@ import {
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
 import ChatPanel from './ChatPanel';
-import { Plus, Trash2, MessageSquare, Clock, AlertTriangle, AlertCircle, ChevronDown, X, Search, Filter, Users, Edit3, Save, Pin } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Clock, AlertTriangle, AlertCircle, ChevronDown, X, Search, Filter, Users, Edit3, Save, Pin, Paperclip, FileText, ExternalLink, Table2, FileEdit } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import '../Gantt/Gantt.css';
 import './Tasks.css';
+import SpreadsheetEditor from '../Files/SpreadsheetEditor';
+import DocumentEditor from '../Files/DocumentEditor';
 
 const PRIORITY_CONFIG = {
   high: { label: 'גבוהה', icon: AlertCircle, color: '#ef4444', bg: '#fef2f2' },
@@ -53,6 +56,9 @@ export default function TaskBoard() {
   const [teams, setTeams] = useState([]);
   const [editingTask, setEditingTask] = useState(null);
   const [editForm, setEditForm] = useState(null);
+  const [allFiles, setAllFiles] = useState([]);
+  const [previewFile, setPreviewFile] = useState(null);
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -61,7 +67,9 @@ export default function TaskBoard() {
     dueDate: '',
     assigneeType: 'all_school',
     assigneeIds: [],
-    assigneeTeamId: ''
+    assigneeTeamId: '',
+    attachedFileId: '',
+    attachedFileName: ''
   });
 
   const schoolId = selectedSchool || userData?.schoolId;
@@ -106,6 +114,27 @@ export default function TaskBoard() {
     return unsub;
   }, [schoolId]);
 
+  // Load files for attachment picker
+  useEffect(() => {
+    if (!schoolId) return;
+    const unsub = onSnapshot(collection(db, `files_${schoolId}`), (snap) => {
+      setAllFiles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => setAllFiles([]));
+    return unsub;
+  }, [schoolId]);
+
+  function handleFileAttach(e) {
+    const fileId = e.target.value;
+    const file = allFiles.find(f => f.id === fileId);
+    setForm(prev => ({ ...prev, attachedFileId: fileId, attachedFileName: file?.name || '' }));
+  }
+
+  function handleEditFileAttach(e) {
+    const fileId = e.target.value;
+    const file = allFiles.find(f => f.id === fileId);
+    setEditForm(prev => ({ ...prev, attachedFileId: fileId, attachedFileName: file?.name || '' }));
+  }
+
   function handleChange(e) {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
   }
@@ -145,12 +174,14 @@ export default function TaskBoard() {
       assigneeType: form.assigneeType,
       assigneeIds: form.assigneeType === 'individual' ? form.assigneeIds : [],
       assigneeTeamId: form.assigneeType === 'team' ? form.assigneeTeamId : '',
+      attachedFileId: form.attachedFileId || '',
+      attachedFileName: form.attachedFileName || '',
       createdBy: userData?.fullName || '',
       createdAt: new Date().toISOString()
     };
 
     await addDoc(collection(db, `tasks_${schoolId}`), taskData);
-    setForm({ title: '', description: '', priority: 'medium', status: 'todo', dueDate: '', assigneeType: 'all_school', assigneeIds: [], assigneeTeamId: '' });
+    setForm({ title: '', description: '', priority: 'medium', status: 'todo', dueDate: '', assigneeType: 'all_school', assigneeIds: [], assigneeTeamId: '', attachedFileId: '', attachedFileName: '' });
     setShowForm(false);
   }
 
@@ -164,7 +195,9 @@ export default function TaskBoard() {
       dueDate: task.dueDate || '',
       assigneeType: task.assigneeType || 'all_school',
       assigneeIds: task.assigneeIds || [],
-      assigneeTeamId: task.assigneeTeamId || ''
+      assigneeTeamId: task.assigneeTeamId || '',
+      attachedFileId: task.attachedFileId || '',
+      attachedFileName: task.attachedFileName || ''
     });
   }
 
@@ -178,7 +211,9 @@ export default function TaskBoard() {
       dueDate: editForm.dueDate,
       assigneeType: editForm.assigneeType,
       assigneeIds: editForm.assigneeType === 'individual' ? editForm.assigneeIds : [],
-      assigneeTeamId: editForm.assigneeType === 'team' ? editForm.assigneeTeamId : ''
+      assigneeTeamId: editForm.assigneeType === 'team' ? editForm.assigneeTeamId : '',
+      attachedFileId: editForm.attachedFileId || '',
+      attachedFileName: editForm.attachedFileName || ''
     });
     setEditingTask(null);
     setEditForm(null);
@@ -379,6 +414,17 @@ export default function TaskBoard() {
                 </div>
               )}
 
+              {/* File attachment */}
+              <div className="form-group">
+                <label><Paperclip size={12} style={{ verticalAlign: 'middle' }} /> צירוף קובץ</label>
+                <select value={form.attachedFileId} onChange={handleFileAttach}>
+                  <option value="">ללא קובץ מצורף</option>
+                  {allFiles.filter(f => f.fileType === 'spreadsheet' || f.fileType === 'document').map(f => (
+                    <option key={f.id} value={f.id}>{f.name} ({f.fileType === 'spreadsheet' ? 'גיליון' : 'מסמך'})</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="form-actions">
                 <button type="submit" className="btn btn-primary">הוספה</button>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>ביטול</button>
@@ -471,6 +517,17 @@ export default function TaskBoard() {
                   </div>
                 )}
 
+                {/* File attachment */}
+                <div className="form-group">
+                  <label><Paperclip size={12} style={{ verticalAlign: 'middle' }} /> צירוף קובץ</label>
+                  <select value={editForm.attachedFileId || ''} onChange={handleEditFileAttach}>
+                    <option value="">ללא קובץ מצורף</option>
+                    {allFiles.filter(f => f.fileType === 'spreadsheet' || f.fileType === 'document').map(f => (
+                      <option key={f.id} value={f.id}>{f.name} ({f.fileType === 'spreadsheet' ? 'גיליון' : 'מסמך'})</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="form-actions">
                   <button type="button" className="btn btn-primary" onClick={saveEdit}>
                     <Save size={14} /> שמירה
@@ -518,6 +575,15 @@ export default function TaskBoard() {
                     {task.createdBy && (
                       <span className="task-created-by" style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
                         יוצר: {task.createdBy}
+                      </span>
+                    )}
+                    {task.attachedFileId && (
+                      <span
+                        className="task-file-link"
+                        onClick={(e) => { e.stopPropagation(); setPreviewFile(task); }}
+                        style={{ fontSize: '0.72rem', color: '#7c3aed', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                      >
+                        <Paperclip size={11} /> {task.attachedFileName || 'קובץ מצורף'}
                       </span>
                     )}
                   </div>
@@ -585,6 +651,38 @@ export default function TaskBoard() {
           onClose={() => setChatTask(null)}
         />
       )}
+      {previewFile && previewFile.attachedFileId && (() => {
+        const file = allFiles.find(f => f.id === previewFile.attachedFileId);
+        if (!file) return null;
+        return (
+          <div className="task-edit-overlay" onClick={() => setPreviewFile(null)} style={{ zIndex: 250 }}>
+            <div className="task-file-preview-modal" onClick={e => e.stopPropagation()} style={{
+              background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+              width: '90%', maxWidth: 900, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', borderBottom: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FileText size={16} style={{ color: '#7c3aed' }} />
+                  <span style={{ fontWeight: 600, fontSize: '0.9rem', color: '#1e293b' }}>{file.name}</span>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => { setPreviewFile(null); navigate('/files'); }} style={{ fontSize: '0.78rem', padding: '0.3rem 0.7rem' }}>
+                    <FileEdit size={13} /> עריכה
+                  </button>
+                  <button className="icon-btn" onClick={() => setPreviewFile(null)}><X size={18} /></button>
+                </div>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto', padding: '0.5rem' }}>
+                {file.fileType === 'spreadsheet' ? (
+                  <SpreadsheetEditor data={file.content} readOnly={true} />
+                ) : (
+                  <DocumentEditor content={file.content} readOnly={true} />
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

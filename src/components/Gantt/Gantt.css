@@ -336,6 +336,20 @@
   font-weight: 700;
 }
 
+.gantt-task-tag {
+  font-size: 0.62rem;
+  color: #1e40af;
+  background: #dbeafe;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 1px;
+  font-weight: 600;
+  max-width: 100%;
+}
+
 .gantt-row-resize-handle {
   position: absolute;
   bottom: 0;
