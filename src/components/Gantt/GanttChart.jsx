@@ -85,6 +85,7 @@ export default function GanttChart() {
   const [showDaySettings, setShowDaySettings] = useState(false);
   const [allHolidays, setAllHolidays] = useState([]);
   const [userTeamIds, setUserTeamIds] = useState([]);
+  const [calendarTasks, setCalendarTasks] = useState([]);
 
   const schoolId = selectedSchool || userData?.schoolId;
 
@@ -103,6 +104,33 @@ export default function GanttChart() {
     }, () => setUserTeamIds([]));
     return unsub;
   }, [schoolId, userData?.uid]);
+
+  // Load tasks with due dates for calendar display
+  useEffect(() => {
+    if (!schoolId) return;
+    const q = query(collection(db, `tasks_${schoolId}`));
+    const unsub = onSnapshot(q, (snap) => {
+      const tasks = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(t => t.dueDate && t.status !== 'done' && t.status !== 'completed');
+      setCalendarTasks(tasks);
+    }, () => setCalendarTasks([]));
+    return unsub;
+  }, [schoolId]);
+
+  // Check if a task is visible to the current user
+  function isTaskVisible(task) {
+    if (isGlobalAdmin() || isPrincipal()) return true;
+    if (task.assigneeType === 'all_school') return true;
+    if (task.assigneeType === 'team') return userTeamIds.includes(task.assigneeTeamId);
+    if (task.assigneeType === 'individual') return (task.assigneeIds || []).includes(userData?.uid);
+    return true;
+  }
+
+  function getTasksForDate(date) {
+    const key = dateKey(date);
+    return calendarTasks.filter(t => t.dueDate === key && isTaskVisible(t));
+  }
 
   // Load visible days setting from Firestore
   useEffect(() => {
@@ -488,6 +516,15 @@ export default function GanttChart() {
                             {getHolidaysForCell(date)[0].name}
                           </div>
                         )}
+                        {getTasksForDate(date).map(task => (
+                          <div
+                            key={task.id}
+                            className="gantt-task-tag"
+                            title={`משימה: ${task.title}`}
+                          >
+                            ✓ {task.title}
+                          </div>
+                        ))}
                         <span className="gantt-date-header-num">{date.getDate()}</span>
                         <span className="gantt-date-header-full">{date.toLocaleDateString('he-IL', { month: '2-digit', year: 'numeric' })}</span>
                       </td>

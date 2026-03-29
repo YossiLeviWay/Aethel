@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette } from 'lucide-react';
+import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle, Undo2, Redo2 } from 'lucide-react';
 import './Editors.css';
 
 function getColLetter(index) {
@@ -177,7 +177,12 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   const [showCellColorPicker, setShowCellColorPicker] = useState(false);
   const [showTextColorPicker, setShowTextColorPicker] = useState(false);
   const [formulaSelectMode, setFormulaSelectMode] = useState(false); // true when user is building formula by clicking cells
+  const [formulaSelStart, setFormulaSelStart] = useState(null); // starting cell when selecting range in formula mode
   const [isDragging, setIsDragging] = useState(false);
+  const [cellContextMenu, setCellContextMenu] = useState(null); // { x, y, type: 'cell'|'row'|'col', row, col }
+  const [clipboard, setClipboard] = useState(null); // { cells, type: 'cut'|'copy', startRow, startCol, endRow, endCol }
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
   const saveTimerRef = useRef(null);
   const cellInputRef = useRef(null);
   const formulaInputRef = useRef(null);
@@ -237,20 +242,33 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     // If in formula select mode, append cell ref to formula
     if (formulaSelectMode && editingCell) {
       const currentVal = formulaValue;
-      // Check last char - if it's an operator or open paren, just append ref
       const lastChar = currentVal.slice(-1);
       let newVal;
-      if (lastChar === '(' || lastChar === ',' || lastChar === '+' || lastChar === '-' || lastChar === '*' || lastChar === '/') {
-        newVal = currentVal + cellRef;
+      if (e?.shiftKey && formulaSelStart) {
+        // Shift+click builds a range like A1:C3
+        const startRef = getColLetter(formulaSelStart.col) + (formulaSelStart.row + 1);
+        const endRef = cellRef;
+        // Replace last ref or range with the new range
+        const rangePattern = /[A-Z]+\d+(:[A-Z]+\d+)?$/;
+        newVal = currentVal.replace(rangePattern, startRef + ':' + endRef);
+        setFormulaValue(newVal);
       } else {
-        newVal = currentVal + ',' + cellRef;
+        if (lastChar === '(' || lastChar === ',' || lastChar === '+' || lastChar === '-' || lastChar === '*' || lastChar === '/') {
+          newVal = currentVal + cellRef;
+        } else if (/[A-Z]/.test(lastChar) || /\d/.test(lastChar)) {
+          newVal = currentVal + ',' + cellRef;
+        } else {
+          newVal = currentVal + cellRef;
+        }
+        setFormulaValue(newVal);
+        setFormulaSelStart({ row: ri, col: ci });
       }
-      setFormulaValue(newVal);
       return;
     }
 
     setSelectedCell(cellRef);
     setEditingCell(null);
+    setCellContextMenu(null);
     if (e?.shiftKey && selection) {
       setSelection(prev => ({ ...prev, endRow: ri, endCol: ci }));
     } else {
@@ -272,6 +290,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   function commitCell(cellRef, rawValue) {
+    pushUndo(cells);
     const newCells = { ...cells };
     const trimmed = (rawValue || '').trim();
     if (!trimmed) {
@@ -284,6 +303,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     setCells(newCells);
     setEditingCell(null);
     setFormulaSelectMode(false);
+    setFormulaSelStart(null);
     triggerSave(newCells, headers, numCols, numRows);
   }
 
@@ -307,13 +327,54 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     if (!ref) return;
 
     if (editingCell === cellRef) {
+      // In formula select mode, allow shift+arrow to build range selections
+      if (formulaSelectMode && e.shiftKey && ['ArrowDown','ArrowUp','ArrowLeft','ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+        // Extend formula range using shift+arrow
+        const lastRefMatch = formulaValue.match(/([A-Z]+)(\d+)$/);
+        if (lastRefMatch) {
+          const lastCol = parseCellRef(lastRefMatch[0])?.col;
+          const lastRow = parseCellRef(lastRefMatch[0])?.row;
+          if (lastCol != null && lastRow != null) {
+            let newRow = lastRow, newCol = lastCol;
+            if (e.key === 'ArrowDown') newRow = Math.min(lastRow + 1, numRows - 1);
+            else if (e.key === 'ArrowUp') newRow = Math.max(lastRow - 1, 0);
+            else if (e.key === 'ArrowRight') newCol = Math.max(lastCol - 1, 0); // RTL
+            else if (e.key === 'ArrowLeft') newCol = Math.min(lastCol + 1, numCols - 1); // RTL
+
+            const newRef = getColLetter(newCol) + (newRow + 1);
+            // If there's a range, extend it; otherwise create one
+            if (formulaSelStart) {
+              const startRef = getColLetter(formulaSelStart.col) + (formulaSelStart.row + 1);
+              const rangePattern = /[A-Z]+\d+(:[A-Z]+\d+)?$/;
+              setFormulaValue(formulaValue.replace(rangePattern, startRef + ':' + newRef));
+            } else {
+              // Start new range from last cell
+              setFormulaSelStart({ row: lastRow, col: lastCol });
+              setFormulaValue(formulaValue + ':' + newRef);
+            }
+          }
+        }
+        return;
+      }
+
       if (e.key === 'Enter') {
         e.preventDefault();
-        commitCell(cellRef, formulaValue);
+        // Auto-close open parenthesis if needed
+        let finalVal = formulaValue;
+        if (formulaSelectMode) {
+          const openCount = (finalVal.match(/\(/g) || []).length;
+          const closeCount = (finalVal.match(/\)/g) || []).length;
+          if (openCount > closeCount) {
+            finalVal += ')'.repeat(openCount - closeCount);
+          }
+        }
+        commitCell(cellRef, finalVal);
         if (ref.row + 1 < numRows) navigateTo(ref.row + 1, ref.col);
       } else if (e.key === 'Escape') {
         setEditingCell(null);
         setFormulaSelectMode(false);
+        setFormulaSelStart(null);
         const cell = cells[cellRef];
         setFormulaValue(cell?.formula || cell?.value || '');
       } else if (e.key === 'Tab') {
@@ -344,7 +405,6 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
       } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         setEditingCell(cellRef);
-        // If typing '=', enter formula select mode
         if (e.key === '=') {
           setFormulaSelectMode(true);
         }
@@ -357,9 +417,19 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   function handleFormulaBarKeyDown(e) {
     if (e.key === 'Enter' && selectedCell) {
       e.preventDefault();
-      commitCell(selectedCell, formulaValue);
+      // Auto-close open parenthesis
+      let finalVal = formulaValue;
+      if (formulaSelectMode) {
+        const openCount = (finalVal.match(/\(/g) || []).length;
+        const closeCount = (finalVal.match(/\)/g) || []).length;
+        if (openCount > closeCount) {
+          finalVal += ')'.repeat(openCount - closeCount);
+        }
+      }
+      commitCell(selectedCell, finalVal);
     } else if (e.key === 'Escape') {
       setFormulaSelectMode(false);
+      setFormulaSelStart(null);
       const cell = cells[selectedCell];
       setFormulaValue(cell?.formula || cell?.value || '');
       formulaInputRef.current?.blur();
@@ -369,11 +439,18 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   function handleFormulaBarChange(e) {
     const val = e.target.value;
     setFormulaValue(val);
-    // Enable formula select mode when typing starts with '='
-    if (val.startsWith('=') && val.length > 1) {
-      setFormulaSelectMode(true);
+    // Enable formula select mode when formula has open parenthesis or starts with '='
+    if (val.startsWith('=')) {
+      const openCount = (val.match(/\(/g) || []).length;
+      const closeCount = (val.match(/\)/g) || []).length;
+      if (openCount > closeCount) {
+        setFormulaSelectMode(true);
+      } else if (val.length > 1) {
+        setFormulaSelectMode(true);
+      }
     } else {
       setFormulaSelectMode(false);
+      setFormulaSelStart(null);
     }
   }
 
@@ -531,6 +608,285 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     triggerSave(cells, headers, numCols, numRows, columnWidths, rowHeights, mergedCells, newStyles);
   }
 
+  // Close context menu on click
+  useEffect(() => {
+    function handleClick() { setCellContextMenu(null); }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
+
+  // Undo/Redo
+  function pushUndo(prevCells) {
+    setUndoStack(us => {
+      const next = [...us, { ...prevCells }];
+      return next.length > 50 ? next.slice(-50) : next;
+    });
+    setRedoStack([]);
+  }
+
+  function handleUndo() {
+    if (undoStack.length === 0) return;
+    const prev = undoStack[undoStack.length - 1];
+    setRedoStack(rs => [...rs, { ...cells }]);
+    setUndoStack(us => us.slice(0, -1));
+    setCells(prev);
+    triggerSave(prev, headers, numCols, numRows);
+  }
+
+  function handleRedo() {
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack(us => [...us, { ...cells }]);
+    setRedoStack(rs => rs.slice(0, -1));
+    setCells(next);
+    triggerSave(next, headers, numCols, numRows);
+  }
+
+  // Global Ctrl+Z / Ctrl+Y
+  useEffect(() => {
+    function handleGlobalKeyDown(e) {
+      if (readOnly) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+    }
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  });
+
+  // Context menu for cells/rows/columns
+  function handleCellContextMenu(e, ri, ci, type) {
+    e.preventDefault();
+    e.stopPropagation();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const menuW = 200, menuH = 320;
+    const x = e.clientX + menuW > vw ? Math.max(0, e.clientX - menuW) : e.clientX;
+    const y = e.clientY + menuH > vh ? Math.max(0, e.clientY - menuH) : e.clientY;
+    setCellContextMenu({ x, y, type, row: ri, col: ci });
+  }
+
+  function cutSelection() {
+    if (!selection) return;
+    pushUndo(cells);
+    const minR = Math.min(selection.startRow, selection.endRow);
+    const maxR = Math.max(selection.startRow, selection.endRow);
+    const minC = Math.min(selection.startCol, selection.endCol);
+    const maxC = Math.max(selection.startCol, selection.endCol);
+    const clipCells = {};
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        const ref = getColLetter(c) + (r + 1);
+        if (cells[ref]) clipCells[`${r - minR}-${c - minC}`] = { ...cells[ref] };
+      }
+    }
+    setClipboard({ cells: clipCells, type: 'cut', startRow: minR, startCol: minC, endRow: maxR, endCol: maxC, rows: maxR - minR + 1, cols: maxC - minC + 1 });
+    // Clear source cells
+    const newCells = { ...cells };
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        delete newCells[getColLetter(c) + (r + 1)];
+      }
+    }
+    setCells(newCells);
+    triggerSave(newCells, headers, numCols, numRows);
+    setCellContextMenu(null);
+  }
+
+  function copySelection() {
+    if (!selection) return;
+    const minR = Math.min(selection.startRow, selection.endRow);
+    const maxR = Math.max(selection.startRow, selection.endRow);
+    const minC = Math.min(selection.startCol, selection.endCol);
+    const maxC = Math.max(selection.startCol, selection.endCol);
+    const clipCells = {};
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        const ref = getColLetter(c) + (r + 1);
+        if (cells[ref]) clipCells[`${r - minR}-${c - minC}`] = { ...cells[ref] };
+      }
+    }
+    setClipboard({ cells: clipCells, type: 'copy', startRow: minR, startCol: minC, endRow: maxR, endCol: maxC, rows: maxR - minR + 1, cols: maxC - minC + 1 });
+    setCellContextMenu(null);
+  }
+
+  function pasteClipboard() {
+    if (!clipboard || !selectedCell) return;
+    const ref = parseCellRef(selectedCell);
+    if (!ref) return;
+    pushUndo(cells);
+    const newCells = { ...cells };
+    for (let r = 0; r < clipboard.rows; r++) {
+      for (let c = 0; c < clipboard.cols; c++) {
+        const srcData = clipboard.cells[`${r}-${c}`];
+        const targetRef = getColLetter(ref.col + c) + (ref.row + r + 1);
+        if (ref.row + r < numRows && ref.col + c < numCols) {
+          if (srcData) {
+            newCells[targetRef] = { ...srcData };
+          }
+        }
+      }
+    }
+    setCells(newCells);
+    triggerSave(newCells, headers, numCols, numRows);
+    setCellContextMenu(null);
+  }
+
+  function clearSelectionContents() {
+    if (!selection) return;
+    pushUndo(cells);
+    const minR = Math.min(selection.startRow, selection.endRow);
+    const maxR = Math.max(selection.startRow, selection.endRow);
+    const minC = Math.min(selection.startCol, selection.endCol);
+    const maxC = Math.max(selection.startCol, selection.endCol);
+    const newCells = { ...cells };
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        delete newCells[getColLetter(c) + (r + 1)];
+      }
+    }
+    setCells(newCells);
+    triggerSave(newCells, headers, numCols, numRows);
+    setCellContextMenu(null);
+  }
+
+  function insertRowAt(rowIndex) {
+    pushUndo(cells);
+    // Shift all cells from rowIndex down by 1
+    const newCells = {};
+    Object.entries(cells).forEach(([key, val]) => {
+      const parsed = parseCellRef(key);
+      if (!parsed) return;
+      if (parsed.row >= rowIndex) {
+        newCells[getColLetter(parsed.col) + (parsed.row + 2)] = val;
+      } else {
+        newCells[key] = val;
+      }
+    });
+    setCells(newCells);
+    const newRows = numRows + 1;
+    setNumRows(newRows);
+    triggerSave(newCells, headers, numCols, newRows);
+    setCellContextMenu(null);
+  }
+
+  function insertColAt(colIndex) {
+    pushUndo(cells);
+    const newCells = {};
+    const newHeaders = {};
+    Object.entries(cells).forEach(([key, val]) => {
+      const parsed = parseCellRef(key);
+      if (!parsed) return;
+      if (parsed.col >= colIndex) {
+        newCells[getColLetter(parsed.col + 1) + (parsed.row + 1)] = val;
+      } else {
+        newCells[key] = val;
+      }
+    });
+    Object.entries(headers).forEach(([idx, val]) => {
+      const i = parseInt(idx);
+      if (i >= colIndex) newHeaders[i + 1] = val;
+      else newHeaders[i] = val;
+    });
+    setCells(newCells);
+    setHeaders(newHeaders);
+    const newCols = numCols + 1;
+    setNumCols(newCols);
+    triggerSave(newCells, newHeaders, newCols, numRows);
+    setCellContextMenu(null);
+  }
+
+  function deleteRowAt(rowIndex) {
+    if (numRows <= 1) return;
+    pushUndo(cells);
+    const newCells = {};
+    Object.entries(cells).forEach(([key, val]) => {
+      const parsed = parseCellRef(key);
+      if (!parsed) return;
+      if (parsed.row === rowIndex) return; // skip deleted row
+      if (parsed.row > rowIndex) {
+        newCells[getColLetter(parsed.col) + parsed.row] = val; // shift up (row+1-1 = row)
+      } else {
+        newCells[key] = val;
+      }
+    });
+    setCells(newCells);
+    const newRows = numRows - 1;
+    setNumRows(newRows);
+    if (selectedCell) { const ref = parseCellRef(selectedCell); if (ref && ref.row >= newRows) { setSelectedCell(null); setEditingCell(null); } }
+    triggerSave(newCells, headers, numCols, newRows);
+    setCellContextMenu(null);
+  }
+
+  function deleteColAt(colIndex) {
+    if (numCols <= 1) return;
+    pushUndo(cells);
+    const newCells = {};
+    const newHeaders = {};
+    Object.entries(cells).forEach(([key, val]) => {
+      const parsed = parseCellRef(key);
+      if (!parsed) return;
+      if (parsed.col === colIndex) return; // skip deleted col
+      if (parsed.col > colIndex) {
+        newCells[getColLetter(parsed.col - 1) + (parsed.row + 1)] = val;
+      } else {
+        newCells[key] = val;
+      }
+    });
+    Object.entries(headers).forEach(([idx, val]) => {
+      const i = parseInt(idx);
+      if (i === colIndex) return;
+      if (i > colIndex) newHeaders[i - 1] = val;
+      else newHeaders[i] = val;
+    });
+    setCells(newCells);
+    setHeaders(newHeaders);
+    const newCols = numCols - 1;
+    setNumCols(newCols);
+    if (selectedCell) { const ref = parseCellRef(selectedCell); if (ref && ref.col >= newCols) { setSelectedCell(null); setEditingCell(null); } }
+    triggerSave(newCells, newHeaders, newCols, numRows);
+    setCellContextMenu(null);
+  }
+
+  function sortColumn(colIndex, ascending) {
+    // Get all rows with data in this column
+    const rowData = [];
+    for (let r = 0; r < numRows; r++) {
+      const ref = getColLetter(colIndex) + (r + 1);
+      const cell = cells[ref];
+      const val = cell ? (cell.formula ? evaluateFormula(cell.formula, cells) : parseFloat(cell.value) || cell.value || '') : '';
+      rowData.push({ row: r, sortVal: val });
+    }
+
+    // Sort by numeric then alphabetic
+    rowData.sort((a, b) => {
+      const aNum = typeof a.sortVal === 'number' ? a.sortVal : parseFloat(a.sortVal);
+      const bNum = typeof b.sortVal === 'number' ? b.sortVal : parseFloat(b.sortVal);
+      if (!isNaN(aNum) && !isNaN(bNum)) return ascending ? aNum - bNum : bNum - aNum;
+      const aStr = String(a.sortVal);
+      const bStr = String(b.sortVal);
+      return ascending ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
+    });
+
+    // Rearrange all columns based on new row order
+    pushUndo(cells);
+    const newCells = {};
+    rowData.forEach((item, newRow) => {
+      for (let c = 0; c < numCols; c++) {
+        const oldRef = getColLetter(c) + (item.row + 1);
+        const newRef = getColLetter(c) + (newRow + 1);
+        if (cells[oldRef]) newCells[newRef] = { ...cells[oldRef] };
+      }
+    });
+    setCells(newCells);
+    triggerSave(newCells, headers, numCols, numRows);
+    setCellContextMenu(null);
+  }
+
   function insertCalcFormula(calcId) {
     if (!selectedCell) return;
     const fn = CALC_FUNCTIONS.find(c => c.id === calcId);
@@ -578,6 +934,9 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     <div className={`spreadsheet-editor ${isFullscreen ? 'spreadsheet-editor--fullscreen' : ''}`}>
       {!readOnly && (
         <div className="spreadsheet-toolbar">
+          <button className="toolbar-btn" onClick={handleUndo} disabled={undoStack.length === 0} title="ביטול (Ctrl+Z)"><Undo2 size={14} /></button>
+          <button className="toolbar-btn" onClick={handleRedo} disabled={redoStack.length === 0} title="חזרה (Ctrl+Y)"><Redo2 size={14} /></button>
+          <div className="toolbar-separator" />
           <button className="toolbar-btn" onClick={addColumn} title="הוסף עמודה"><Plus size={14} /> עמודה</button>
           <button className="toolbar-btn toolbar-btn--danger" onClick={removeColumn} disabled={numCols <= 1} title="הסר עמודה"><Minus size={14} /> עמודה</button>
           <div className="toolbar-separator" />
@@ -674,7 +1033,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
             <tr>
               <th className="corner-header">#</th>
               {Array.from({ length: numCols }, (_, ci) => (
-                <th key={ci} className="col-header" style={{ width: columnWidths[ci] || 100 }}>
+                <th key={ci} className="col-header" style={{ width: columnWidths[ci] || 100 }} onContextMenu={(e) => handleCellContextMenu(e, -1, ci, 'col')}>
                   <span className="col-letter">{getColLetter(ci)}</span>
                   <input value={headers[ci] || ''} onChange={(e) => handleHeaderChange(ci, e.target.value)} placeholder={getColLetter(ci)} disabled={readOnly} />
                   <div className="col-resize-handle" onMouseDown={(e) => handleColumnResize(ci, e)} />
@@ -685,7 +1044,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
           <tbody>
             {Array.from({ length: numRows }, (_, ri) => (
               <tr key={ri} style={{ height: rowHeights[ri] || 32 }}>
-                <td className="row-header" style={{ position: 'relative' }}>
+                <td className="row-header" style={{ position: 'relative' }} onContextMenu={(e) => handleCellContextMenu(e, ri, -1, 'row')}>
                   {ri + 1}
                   <div className="row-resize-handle" onMouseDown={(e) => handleRowResize(ri, e)} />
                 </td>
@@ -723,6 +1082,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                       onKeyDown={(e) => handleCellKeyDown(e, cellRefStr)}
                       onMouseDown={(e) => handleCellMouseDown(ri, ci, e)}
                       onMouseEnter={() => handleCellMouseEnter(ri, ci)}
+                      onContextMenu={(e) => handleCellContextMenu(e, ri, ci, 'cell')}
                       tabIndex={isSelected ? 0 : -1}
                       style={{
                         width: columnWidths[ci] || 100,
@@ -739,7 +1099,13 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                           onChange={(e) => {
                             const val = e.target.value;
                             setFormulaValue(val);
-                            if (val.startsWith('=') && val.length > 1) setFormulaSelectMode(true);
+                            if (val.startsWith('=')) {
+                              const openP = (val.match(/\(/g) || []).length;
+                              const closeP = (val.match(/\)/g) || []).length;
+                              setFormulaSelectMode(openP > closeP || val.length > 1);
+                            } else {
+                              setFormulaSelectMode(false);
+                            }
                           }}
                           onKeyDown={(e) => handleCellKeyDown(e, cellRefStr)}
                           onBlur={() => { if (!formulaSelectMode) commitCell(cellRefStr, formulaValue); }}
@@ -759,6 +1125,109 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
           </tbody>
         </table>
       </div>
+
+      {/* Cell Context Menu */}
+      {cellContextMenu && !readOnly && (
+        <div className="context-menu" style={{ top: cellContextMenu.y, left: cellContextMenu.x }} onClick={e => e.stopPropagation()}>
+          {cellContextMenu.type === 'cell' && (
+            <>
+              <button className="context-menu-item" onClick={cutSelection}>
+                <Scissors size={14} /> גזירה
+              </button>
+              <button className="context-menu-item" onClick={copySelection}>
+                <Copy size={14} /> העתקה
+              </button>
+              <button className="context-menu-item" onClick={pasteClipboard} disabled={!clipboard}>
+                <ClipboardPaste size={14} /> הדבקה
+              </button>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item" onClick={() => { insertRowAt(cellContextMenu.row); }}>
+                <PlusCircle size={14} /> הוסף שורה
+              </button>
+              <button className="context-menu-item" onClick={() => { insertColAt(cellContextMenu.col); }}>
+                <PlusCircle size={14} /> הוסף עמודה
+              </button>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item context-menu-item--danger" onClick={() => { deleteRowAt(cellContextMenu.row); }}>
+                <MinusCircle size={14} /> מחק שורה
+              </button>
+              <button className="context-menu-item context-menu-item--danger" onClick={() => { deleteColAt(cellContextMenu.col); }}>
+                <MinusCircle size={14} /> מחק עמודה
+              </button>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item" onClick={clearSelectionContents}>
+                <Trash2 size={14} /> נקה תוכן
+              </button>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item" onClick={() => sortColumn(cellContextMenu.col, true)}>
+                <ArrowUpDown size={14} /> מיון עולה
+              </button>
+              <button className="context-menu-item" onClick={() => sortColumn(cellContextMenu.col, false)}>
+                <ArrowDownUp size={14} /> מיון יורד
+              </button>
+            </>
+          )}
+
+          {cellContextMenu.type === 'row' && (
+            <>
+              <button className="context-menu-item" onClick={() => { insertRowAt(cellContextMenu.row); }}>
+                <PlusCircle size={14} /> הוסף שורה למעלה
+              </button>
+              <button className="context-menu-item" onClick={() => { insertRowAt(cellContextMenu.row + 1); }}>
+                <PlusCircle size={14} /> הוסף שורה למטה
+              </button>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item context-menu-item--danger" onClick={() => { deleteRowAt(cellContextMenu.row); }}>
+                <MinusCircle size={14} /> מחק שורה {cellContextMenu.row + 1}
+              </button>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item" onClick={() => {
+                pushUndo(cells);
+                const newCells = { ...cells };
+                for (let c = 0; c < numCols; c++) delete newCells[getColLetter(c) + (cellContextMenu.row + 1)];
+                setCells(newCells);
+                triggerSave(newCells, headers, numCols, numRows);
+                setCellContextMenu(null);
+              }}>
+                <Trash2 size={14} /> נקה שורה
+              </button>
+            </>
+          )}
+
+          {cellContextMenu.type === 'col' && (
+            <>
+              <button className="context-menu-item" onClick={() => { insertColAt(cellContextMenu.col); }}>
+                <PlusCircle size={14} /> הוסף עמודה לפני
+              </button>
+              <button className="context-menu-item" onClick={() => { insertColAt(cellContextMenu.col + 1); }}>
+                <PlusCircle size={14} /> הוסף עמודה אחרי
+              </button>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item context-menu-item--danger" onClick={() => { deleteColAt(cellContextMenu.col); }}>
+                <MinusCircle size={14} /> מחק עמודה {getColLetter(cellContextMenu.col)}
+              </button>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item" onClick={() => {
+                pushUndo(cells);
+                const newCells = { ...cells };
+                for (let r = 0; r < numRows; r++) delete newCells[getColLetter(cellContextMenu.col) + (r + 1)];
+                setCells(newCells);
+                triggerSave(newCells, headers, numCols, numRows);
+                setCellContextMenu(null);
+              }}>
+                <Trash2 size={14} /> נקה עמודה
+              </button>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item" onClick={() => sortColumn(cellContextMenu.col, true)}>
+                <ArrowUpDown size={14} /> מיון עולה
+              </button>
+              <button className="context-menu-item" onClick={() => sortColumn(cellContextMenu.col, false)}>
+                <ArrowDownUp size={14} /> מיון יורד
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Status Bar */}
       <div className="spreadsheet-status">

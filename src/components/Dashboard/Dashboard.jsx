@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import Header from '../Layout/Header';
-import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck, Activity, School, UserPlus, Shield, Megaphone, FileText, BarChart3, SlidersHorizontal } from 'lucide-react';
+import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck, Activity, School, UserPlus, Shield, Megaphone, FileText, BarChart3, SlidersHorizontal, ArrowUpDown } from 'lucide-react';
 import './Dashboard.css';
 
 function getGreeting() {
@@ -91,6 +91,11 @@ export default function Dashboard() {
   const [allSchoolEvents, setAllSchoolEvents] = useState([]);
   const [recentAnnouncements, setRecentAnnouncements] = useState([]);
   const [announcementTeams, setAnnouncementTeams] = useState([]);
+
+  // Personal tasks
+  const [myTasks, setMyTasks] = useState([]);
+  const [myTeams, setMyTeams] = useState([]);
+  const [taskSortBy, setTaskSortBy] = useState('priority'); // 'priority' | 'dueDate'
 
   // Filter preferences state
   const [showEventsFilter, setShowEventsFilter] = useState(false);
@@ -175,6 +180,58 @@ export default function Dashboard() {
     });
     return unsub;
   }, [selectedSchool]);
+
+  // Load user's teams for task filtering
+  useEffect(() => {
+    if (!selectedSchool || !currentUser?.uid) return;
+    const unsub = onSnapshot(collection(db, `teams_${selectedSchool}`), (snap) => {
+      const allTeams = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setMyTeams(allTeams);
+    }, () => setMyTeams([]));
+    return unsub;
+  }, [selectedSchool, currentUser?.uid]);
+
+  // Load tasks assigned to current user
+  useEffect(() => {
+    if (!selectedSchool || !currentUser?.uid) return;
+    const q = query(collection(db, `tasks_${selectedSchool}`), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      const allTasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Filter tasks assigned to current user
+      const userTeamIds = myTeams.filter(t => Array.isArray(t.memberIds) && t.memberIds.includes(currentUser.uid)).map(t => t.id);
+      const filtered = allTasks.filter(task => {
+        if (task.status === 'done' || task.status === 'completed') return false;
+        if (task.assigneeType === 'all_school') return true;
+        if (task.assigneeType === 'team') return userTeamIds.includes(task.assigneeTeamId);
+        if (task.assigneeType === 'individual') return (task.assigneeIds || []).includes(currentUser.uid);
+        return true; // fallback for old tasks without assigneeType
+      });
+      setMyTasks(filtered);
+    }, () => setMyTasks([]));
+    return unsub;
+  }, [selectedSchool, currentUser?.uid, myTeams]);
+
+  // Sort personal tasks
+  const sortedMyTasks = [...myTasks].sort((a, b) => {
+    if (taskSortBy === 'priority') {
+      const pOrder = { high: 0, medium: 1, low: 2 };
+      return (pOrder[a.priority] ?? 1) - (pOrder[b.priority] ?? 1);
+    }
+    // Sort by due date (no date = last)
+    if (!a.dueDate && !b.dueDate) return 0;
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    return a.dueDate.localeCompare(b.dueDate);
+  });
+
+  function getTaskTeamName(task) {
+    if (task.assigneeType === 'all_school') return 'כל בית הספר';
+    if (task.assigneeType === 'team') {
+      const team = myTeams.find(t => t.id === task.assigneeTeamId);
+      return team?.name || 'צוות';
+    }
+    return 'אישי';
+  }
 
   // Load schools list for mapping IDs to names
   useEffect(() => {
@@ -730,6 +787,82 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* My Tasks */}
+        {sortedMyTasks.length > 0 && (
+          <div className="dashboard-section" style={{ marginBottom: '1rem' }}>
+            <div className="section-header">
+              <CheckSquare size={18} />
+              <h2 className="section-title">המשימות שלי ({sortedMyTasks.length})</h2>
+              <div style={{ marginRight: 'auto', display: 'flex', gap: '0.35rem' }}>
+                <button
+                  className={`btn btn-sm ${taskSortBy === 'priority' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setTaskSortBy('priority')}
+                  style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}
+                >
+                  <ArrowUpDown size={12} /> דחיפות
+                </button>
+                <button
+                  className={`btn btn-sm ${taskSortBy === 'dueDate' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setTaskSortBy('dueDate')}
+                  style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}
+                >
+                  <ArrowUpDown size={12} /> תאריך יעד
+                </button>
+              </div>
+            </div>
+            <div className="section-body">
+              <div className="my-task-list">
+                {sortedMyTasks.slice(0, 10).map(task => {
+                  const prioColors = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' };
+                  const prioLabels = { high: 'גבוהה', medium: 'בינונית', low: 'נמוכה' };
+                  const prioBgs = { high: '#fef2f2', medium: '#fffbeb', low: '#f0fdf4' };
+                  const statusLabels = { todo: 'לביצוע', in_progress: 'בתהליך', done: 'הושלם' };
+                  const overdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'done';
+                  const teamName = getTaskTeamName(task);
+                  return (
+                    <div
+                      key={task.id}
+                      className="my-task-item"
+                      style={{ borderRightColor: prioColors[task.priority] || '#f59e0b', cursor: 'pointer' }}
+                      onClick={() => navigate('/tasks')}
+                    >
+                      <div className="my-task-main">
+                        <span className="my-task-title">{task.title}</span>
+                        <div className="my-task-meta">
+                          <span className="my-task-priority" style={{ background: prioBgs[task.priority], color: prioColors[task.priority] }}>
+                            {prioLabels[task.priority] || 'בינונית'}
+                          </span>
+                          <span className="my-task-team">
+                            <Users size={10} style={{ verticalAlign: 'middle', marginLeft: '0.15rem' }} />
+                            {teamName}
+                          </span>
+                          <span className="my-task-status" style={{ color: task.status === 'in_progress' ? '#2563eb' : '#64748b' }}>
+                            {statusLabels[task.status] || 'לביצוע'}
+                          </span>
+                          {task.dueDate && (
+                            <span className={`my-task-due ${overdue ? 'my-task-due--late' : ''}`}>
+                              {new Date(task.dueDate).toLocaleDateString('he-IL')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {sortedMyTasks.length > 10 && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ width: '100%', marginTop: '0.5rem' }}
+                    onClick={() => navigate('/tasks')}
+                  >
+                    עוד {sortedMyTasks.length - 10} משימות...
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Recent Announcements */}
         {recentAnnouncements.length > 0 && (

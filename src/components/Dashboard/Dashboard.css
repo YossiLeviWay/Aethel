@@ -625,3 +625,76 @@
 .filter-save-btn:hover {
   background: #1d4ed8;
 }
+
+/* My Tasks Section */
+.my-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.my-task-item {
+  display: flex;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-right: 3px solid #f59e0b;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+
+.my-task-item:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.my-task-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.my-task-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.my-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.my-task-priority {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+}
+
+.my-task-team {
+  font-size: 0.7rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.my-task-status {
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.my-task-due {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.my-task-due--late {
+  color: #ef4444;
+  font-weight: 600;
+}

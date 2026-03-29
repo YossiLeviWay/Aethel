@@ -13,6 +13,15 @@ import {
   Type,
   Table,
   Pilcrow,
+  Undo2,
+  Redo2,
+  Scissors,
+  Copy,
+  ClipboardPaste,
+  Trash2,
+  PlusCircle,
+  MinusCircle,
+  Merge,
 } from 'lucide-react';
 import './Editors.css';
 
@@ -55,6 +64,7 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
   const saveTimerRef = useRef(null);
   const colorBtnRef = useRef(null);
   const tableBtnRef = useRef(null);
+  const [contextMenu, setContextMenu] = useState(null);
 
   // Initialize content
   useEffect(() => {
@@ -175,11 +185,125 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
     }
   }
 
+  // Context menu
+  function handleContextMenu(e) {
+    if (readOnly) return;
+    e.preventDefault();
+    const cell = e.target.closest('td, th');
+    const table = e.target.closest('table');
+    const x = Math.min(e.clientX, window.innerWidth - 200);
+    const y = Math.min(e.clientY, window.innerHeight - 300);
+    setContextMenu({ x, y, isTable: !!table, tableEl: table, cellEl: cell });
+  }
+
+  // Close context menu on click
+  useEffect(() => {
+    if (!contextMenu) return;
+    function handleClick() { setContextMenu(null); }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [contextMenu]);
+
+  // Table operations
+  function mergeTableCells() {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const table = editorRef.current?.querySelector('table');
+    if (!table) return;
+    const allCells = table.querySelectorAll('td, th');
+    const selectedCells = [];
+    allCells.forEach(cell => {
+      if (range.intersectsNode(cell)) selectedCells.push(cell);
+    });
+    if (selectedCells.length < 2) return;
+    const first = selectedCells[0];
+    const content = selectedCells.map(c => c.innerHTML).join(' ');
+    const firstRow = first.parentElement;
+    const sameRow = selectedCells.every(c => c.parentElement === firstRow);
+    if (sameRow) {
+      first.colSpan = selectedCells.length;
+      first.innerHTML = content;
+      for (let i = 1; i < selectedCells.length; i++) selectedCells[i].remove();
+    } else {
+      const rows = new Set(selectedCells.map(c => c.parentElement));
+      first.rowSpan = rows.size;
+      first.colSpan = Math.max(...[...rows].map(r => selectedCells.filter(c => c.parentElement === r).length));
+      first.innerHTML = content;
+      for (let i = 1; i < selectedCells.length; i++) selectedCells[i].remove();
+    }
+    triggerSave();
+  }
+
+  function insertTableRow(position) {
+    if (!contextMenu?.cellEl) return;
+    const row = contextMenu.cellEl.closest('tr');
+    if (!row) return;
+    const colCount = row.cells.length;
+    const newRow = document.createElement('tr');
+    for (let i = 0; i < colCount; i++) {
+      const td = document.createElement('td');
+      td.innerHTML = '&nbsp;';
+      newRow.appendChild(td);
+    }
+    if (position === 'above') {
+      row.parentElement.insertBefore(newRow, row);
+    } else {
+      row.parentElement.insertBefore(newRow, row.nextSibling);
+    }
+    triggerSave();
+  }
+
+  function insertTableCol(position) {
+    if (!contextMenu?.cellEl) return;
+    const table = contextMenu.cellEl.closest('table');
+    const cellIndex = contextMenu.cellEl.cellIndex;
+    if (!table) return;
+    table.querySelectorAll('tr').forEach(row => {
+      const td = document.createElement('td');
+      td.innerHTML = '&nbsp;';
+      const refIndex = position === 'before' ? cellIndex : cellIndex + 1;
+      if (refIndex < row.cells.length) {
+        row.insertBefore(td, row.cells[refIndex]);
+      } else {
+        row.appendChild(td);
+      }
+    });
+    triggerSave();
+  }
+
+  function deleteTableRow() {
+    if (!contextMenu?.cellEl) return;
+    const row = contextMenu.cellEl.closest('tr');
+    if (row) { row.remove(); triggerSave(); }
+  }
+
+  function deleteTableCol() {
+    if (!contextMenu?.cellEl) return;
+    const table = contextMenu.cellEl.closest('table');
+    const cellIndex = contextMenu.cellEl.cellIndex;
+    if (!table) return;
+    table.querySelectorAll('tr').forEach(row => {
+      if (row.cells[cellIndex]) row.cells[cellIndex].remove();
+    });
+    triggerSave();
+  }
+
   return (
     <div className="document-editor">
       {/* Toolbar */}
       {!readOnly && (
         <div className="document-toolbar">
+          {/* Undo/Redo */}
+          <div className="toolbar-group">
+            <button className="toolbar-btn" onClick={() => execCommand('undo')} title="ביטול (Ctrl+Z)">
+              <Undo2 size={16} />
+            </button>
+            <button className="toolbar-btn" onClick={() => execCommand('redo')} title="חזרה (Ctrl+Y)">
+              <Redo2 size={16} />
+            </button>
+          </div>
+          <div className="toolbar-separator" />
           {/* Font family */}
           <select className="toolbar-select toolbar-select--font" onChange={handleFontChange} defaultValue="">
             <option value="" disabled>גופן</option>
@@ -337,11 +461,63 @@ export default function DocumentEditor({ content, onChange, readOnly = false }) 
           contentEditable={!readOnly}
           onInput={handleInput}
           onKeyDown={handleKeyDown}
+          onContextMenu={handleContextMenu}
           suppressContentEditableWarning
           dir={textDirection}
           style={{ textAlign: textDirection === 'rtl' ? 'right' : 'left' }}
         />
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div className="context-menu" style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 1000 }} onClick={e => e.stopPropagation()}>
+          <button className="context-menu-item" onClick={() => { execCommand('cut'); setContextMenu(null); }}>
+            <Scissors size={14} /> גזירה
+          </button>
+          <button className="context-menu-item" onClick={() => { execCommand('copy'); setContextMenu(null); }}>
+            <Copy size={14} /> העתקה
+          </button>
+          <button className="context-menu-item" onClick={() => { document.execCommand('paste'); triggerSave(); setContextMenu(null); }}>
+            <ClipboardPaste size={14} /> הדבקה
+          </button>
+          <div className="context-menu-divider" />
+          <button className="context-menu-item" onClick={() => { execCommand('bold'); setContextMenu(null); }}>
+            <Bold size={14} /> מודגש
+          </button>
+          <button className="context-menu-item" onClick={() => { execCommand('italic'); setContextMenu(null); }}>
+            <Italic size={14} /> נטוי
+          </button>
+          <button className="context-menu-item" onClick={() => { execCommand('underline'); setContextMenu(null); }}>
+            <Underline size={14} /> קו תחתון
+          </button>
+          {contextMenu.isTable && (
+            <>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item" onClick={() => { mergeTableCells(); setContextMenu(null); }}>
+                <Merge size={14} /> מיזוג תאים
+              </button>
+              <button className="context-menu-item" onClick={() => { insertTableRow('above'); setContextMenu(null); }}>
+                <PlusCircle size={14} /> הוסף שורה מעל
+              </button>
+              <button className="context-menu-item" onClick={() => { insertTableRow('below'); setContextMenu(null); }}>
+                <PlusCircle size={14} /> הוסף שורה מתחת
+              </button>
+              <button className="context-menu-item" onClick={() => { insertTableCol('before'); setContextMenu(null); }}>
+                <PlusCircle size={14} /> הוסף עמודה לפני
+              </button>
+              <button className="context-menu-item" onClick={() => { insertTableCol('after'); setContextMenu(null); }}>
+                <PlusCircle size={14} /> הוסף עמודה אחרי
+              </button>
+              <button className="context-menu-item context-menu-item--danger" onClick={() => { deleteTableRow(); setContextMenu(null); }}>
+                <MinusCircle size={14} /> מחק שורה
+              </button>
+              <button className="context-menu-item context-menu-item--danger" onClick={() => { deleteTableCol(); setContextMenu(null); }}>
+                <MinusCircle size={14} /> מחק עמודה
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Status Bar */}
       <div className="document-status">

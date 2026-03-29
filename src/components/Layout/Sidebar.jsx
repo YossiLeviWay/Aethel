@@ -46,7 +46,6 @@ const NAV_ITEMS = [
   { path: '/files', icon: FolderOpen, label: 'קבצים', requiresSchool: true, minRole: 'editor' },
   { path: '/teams', icon: Users, label: 'צוותים', requiresSchool: true, minRole: 'editor' },
   { path: '/messages', icon: MessageCircle, label: 'הודעות', all: true },
-  { path: '/notifications', icon: Bell, label: 'התראות', all: true },
   { path: '/holidays', icon: Sun, label: 'חופשות וחגים', roles: ['global_admin', 'principal'] },
   { path: '/schools', icon: School, label: 'ניהול מוסדות', roles: ['global_admin'] },
   { path: '/settings', icon: Settings, label: 'הגדרות', all: true }
