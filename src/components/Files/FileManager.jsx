@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { db, storage } from '../../firebase';
 import PermissionsMenu from '../Shared/PermissionsMenu';
@@ -45,11 +46,13 @@ import {
   Info,
   MoreVertical
 } from 'lucide-react';
+import { createNotifications } from '../../utils/notifications';
 import '../Gantt/Gantt.css';
 import './Files.css';
 
 export default function FileManager() {
   const { userData, currentUser, selectedSchool, isPrincipal, isGlobalAdmin } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const uid = currentUser?.uid;
   const [folders, setFolders] = useState([]);
   const [files, setFiles] = useState([]);
@@ -76,6 +79,7 @@ export default function FileManager() {
   const [viewerContextMenu, setViewerContextMenu] = useState(null);
   const autoSaveTimerRef = useRef(null);
   const lastSavedContentRef = useRef(null);
+  const fileEditNotifSentRef = useRef(null); // track which file we already notified about
 
   const schoolId = selectedSchool || userData?.schoolId;
   const canManage = isPrincipal() || isGlobalAdmin();
@@ -130,6 +134,23 @@ export default function FileManager() {
     });
     return unsub;
   }, [schoolId]);
+
+  // Open file from URL param (e.g. /files?openFile=abc123)
+  useEffect(() => {
+    const openFileId = searchParams.get('openFile');
+    if (openFileId && files.length > 0 && !editingFile) {
+      const file = files.find(f => f.id === openFileId);
+      if (file && (file.fileType === 'spreadsheet' || file.fileType === 'document')) {
+        setEditingFile(file);
+        if (file.folderId) {
+          setSelectedFolder(file.folderId);
+          setExpandedFolders(prev => ({ ...prev, [file.folderId]: true }));
+        }
+      }
+      // Clear the param so it doesn't re-trigger
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, files]);
 
   async function createFolder(e) {
     e.preventDefault();
@@ -216,6 +237,24 @@ export default function FileManager() {
       });
       lastSavedContentRef.current = content;
       setEditingFile(prev => ({ ...prev, content }));
+      // Notify team members about file edit (once per file session)
+      if (fileEditNotifSentRef.current !== editingFile.id) {
+        fileEditNotifSentRef.current = editingFile.id;
+        const folderId = editingFile.folderId;
+        const folder = folders.find(f => f.id === folderId);
+        // Notify allowed users of the folder
+        if (folder?.allowedUsers) {
+          const otherIds = folder.allowedUsers.filter(id => id !== uid);
+          if (otherIds.length > 0) {
+            createNotifications(otherIds, {
+              title: `הקובץ "${editingFile.name}" נערך`,
+              body: `${userData?.fullName || 'משתמש'} ערך/ה את הקובץ`,
+              type: 'file',
+              link: '/files'
+            });
+          }
+        }
+      }
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message);
     }

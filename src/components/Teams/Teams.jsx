@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
+import { createNotification } from '../../utils/notifications';
 import {
   collection,
   query,
@@ -116,6 +117,13 @@ export default function Teams() {
     if (!team || (team.memberIds || []).includes(userId)) return;
     await updateDoc(doc(db, `teams_${schoolId}`, teamId), {
       memberIds: [...(team.memberIds || []), userId]
+    });
+    // Notify the added user
+    createNotification(userId, {
+      title: `הוספת לצוות "${team.name}"`,
+      body: `${userData?.fullName || 'מנהל'} הוסיף/ה אותך לצוות`,
+      type: 'staff',
+      link: '/teams'
     });
   }
 
