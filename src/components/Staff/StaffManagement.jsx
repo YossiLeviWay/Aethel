@@ -20,7 +20,7 @@ import {
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, updateEmail, deleteUser, signOut as firebaseSignOut } from 'firebase/auth';
 import { secondaryAuth } from '../../firebase';
 import Header from '../Layout/Header';
-import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User, MessageCircle, Briefcase, Eye, Key, Copy, RefreshCw } from 'lucide-react';
+import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User, MessageCircle, Briefcase, Eye, Key, Copy, RefreshCw, Users, Plus, Trash, Check, AlertCircle } from 'lucide-react';
 import RolesManager from './RolesManager';
 import '../Gantt/Gantt.css';
 import './Staff.css';
@@ -183,6 +183,13 @@ export default function StaffManagement() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState({ fullName: '', email: '', jobTitle: '', role: 'viewer', schoolId: '', password: '', avatarStyle: 'default' });
   const [addError, setAddError] = useState('');
+
+  // Bulk add modal
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const EMPTY_BULK_ROW = { fullName: '', email: '', jobTitle: '', password: '', role: 'viewer' };
+  const [bulkRows, setBulkRows] = useState(() => Array.from({ length: 5 }, () => ({ ...EMPTY_BULK_ROW })));
+  const [bulkError, setBulkError] = useState('');
+  const [bulkProgress, setBulkProgress] = useState(null); // { current, total, results: [{ name, success, error }] }
 
   // Edit modal
   const [editUser, setEditUser] = useState(null);
@@ -554,6 +561,112 @@ export default function StaffManagement() {
     }
   }
 
+  function openBulkModal() {
+    setBulkRows(Array.from({ length: 5 }, () => ({ ...EMPTY_BULK_ROW })));
+    setBulkError('');
+    setBulkProgress(null);
+    setShowBulkModal(true);
+  }
+
+  function updateBulkRow(index, field, value) {
+    setBulkRows(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  }
+
+  function addBulkRow() {
+    setBulkRows(prev => [...prev, { ...EMPTY_BULK_ROW }]);
+  }
+
+  function removeBulkRow(index) {
+    setBulkRows(prev => prev.length <= 1 ? prev : prev.filter((_, i) => i !== index));
+  }
+
+  function handleBulkPaste(e, startRow, startField) {
+    const pasteData = e.clipboardData.getData('text');
+    if (!pasteData.includes('\t') && !pasteData.includes('\n')) return; // normal single-cell paste
+    e.preventDefault();
+
+    const fields = ['fullName', 'email', 'jobTitle', 'password', 'role'];
+    const startCol = fields.indexOf(startField);
+    const lines = pasteData.split('\n').filter(line => line.trim());
+
+    setBulkRows(prev => {
+      const updated = [...prev];
+      // Ensure enough rows
+      while (updated.length < startRow + lines.length) {
+        updated.push({ ...EMPTY_BULK_ROW });
+      }
+      lines.forEach((line, lineIdx) => {
+        const cells = line.split('\t');
+        cells.forEach((cell, cellIdx) => {
+          const colIdx = startCol + cellIdx;
+          if (colIdx < fields.length) {
+            const field = fields[colIdx];
+            let value = cell.trim();
+            // Normalize role values
+            if (field === 'role') {
+              const roleMap = { 'צופה': 'viewer', 'עורך': 'editor', 'מנהל מוסד': 'principal', 'viewer': 'viewer', 'editor': 'editor', 'principal': 'principal' };
+              value = roleMap[value] || 'viewer';
+            }
+            updated[startRow + lineIdx] = { ...updated[startRow + lineIdx], [field]: value };
+          }
+        });
+      });
+      return updated;
+    });
+  }
+
+  async function handleBulkAdd() {
+    const validRows = bulkRows.filter(r => r.fullName.trim() && r.email.trim());
+    if (validRows.length === 0) {
+      setBulkError('יש למלא לפחות שורה אחת עם שם ואימייל');
+      return;
+    }
+    const invalidPasswords = validRows.filter(r => !r.password || r.password.length < 6);
+    if (invalidPasswords.length > 0) {
+      setBulkError('כל השורות המלאות חייבות לכלול סיסמה (לפחות 6 תווים)');
+      return;
+    }
+    setBulkError('');
+    const targetSchoolId = schoolId;
+    const results = [];
+    setBulkProgress({ current: 0, total: validRows.length, results: [] });
+
+    for (let i = 0; i < validRows.length; i++) {
+      const row = validRows[i];
+      try {
+        const cred = await createUserWithEmailAndPassword(secondaryAuth, row.email.trim(), row.password);
+        await firebaseSignOut(secondaryAuth);
+        await setDoc(doc(db, 'users', cred.user.uid), {
+          uid: cred.user.uid,
+          email: row.email.trim(),
+          fullName: row.fullName.trim(),
+          jobTitle: row.jobTitle.trim(),
+          role: row.role,
+          schoolId: targetSchoolId,
+          schoolIds: [targetSchoolId],
+          pendingSchools: [],
+          permissions: getPermissionsForRole(row.role),
+          avatarStyle: 'default',
+          phone: '',
+          avatar: '',
+          createdAt: new Date().toISOString(),
+          _authPassword: row.password,
+        });
+        results.push({ name: row.fullName, success: true });
+      } catch (err) {
+        const errorMsg = err.code === 'auth/email-already-in-use' ? 'אימייל כבר קיים' : err.message;
+        results.push({ name: row.fullName, success: false, error: errorMsg });
+      }
+      setBulkProgress({ current: i + 1, total: validRows.length, results: [...results] });
+    }
+
+    isAdmin ? loadAllStaff() : loadStaff();
+  }
+
   // Get school names for a user
   function getUserSchoolNames(user) {
     const ids = user.schoolIds || (user.schoolId ? [user.schoolId] : []);
@@ -750,6 +863,10 @@ export default function StaffManagement() {
                 <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
                   <UserPlus size={16} />
                   הוספת איש צוות
+                </button>
+                <button className="btn btn-primary" onClick={openBulkModal} style={{ background: '#059669' }}>
+                  <Users size={16} />
+                  הוספה מרובה
                 </button>
                 <button className="btn btn-secondary" onClick={() => setShowRolesManager(true)}>
                   <Shield size={16} />
@@ -1370,6 +1487,174 @@ export default function StaffManagement() {
                     <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>ביטול</button>
                   </div>
                 </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Add Modal */}
+        {showBulkModal && (
+          <div className="modal-overlay" onClick={() => !bulkProgress && setShowBulkModal(false)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 900, width: '96vw' }}>
+              <div className="modal-header">
+                <h3>
+                  <Users size={18} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.4rem' }} />
+                  הוספת אנשי צוות מרובים
+                </h3>
+                <button className="modal-close" onClick={() => !bulkProgress && setShowBulkModal(false)}><X size={18} /></button>
+              </div>
+              <div className="modal-form" style={{ padding: '0.75rem' }}>
+                {!bulkProgress ? (
+                  <>
+                    <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 0.5rem' }}>
+                      מלאו את הטבלה או הדביקו נתונים מאקסל (שם, אימייל, תפקיד, סיסמה, הרשאה). ניתן להדביק שורות וטורים ישירות מגיליון אלקטרוני.
+                    </p>
+                    <div className="bulk-table-wrapper">
+                      <table className="bulk-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: 36 }}>#</th>
+                            <th>שם מלא</th>
+                            <th>אימייל</th>
+                            <th>תפקיד</th>
+                            <th>סיסמה</th>
+                            <th>הרשאה</th>
+                            <th style={{ width: 36 }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkRows.map((row, idx) => (
+                            <tr key={idx} className={row.fullName.trim() && row.email.trim() ? 'bulk-row--filled' : ''}>
+                              <td className="bulk-row-num">{idx + 1}</td>
+                              <td>
+                                <input
+                                  value={row.fullName}
+                                  onChange={e => updateBulkRow(idx, 'fullName', e.target.value)}
+                                  onPaste={e => handleBulkPaste(e, idx, 'fullName')}
+                                  placeholder="שם פרטי ומשפחה"
+                                  className="bulk-input"
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  value={row.email}
+                                  onChange={e => updateBulkRow(idx, 'email', e.target.value)}
+                                  onPaste={e => handleBulkPaste(e, idx, 'email')}
+                                  placeholder="email@example.com"
+                                  dir="ltr"
+                                  className="bulk-input"
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  value={row.jobTitle}
+                                  onChange={e => updateBulkRow(idx, 'jobTitle', e.target.value)}
+                                  onPaste={e => handleBulkPaste(e, idx, 'jobTitle')}
+                                  placeholder="תפקיד"
+                                  className="bulk-input"
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  value={row.password}
+                                  onChange={e => updateBulkRow(idx, 'password', e.target.value)}
+                                  onPaste={e => handleBulkPaste(e, idx, 'password')}
+                                  placeholder="סיסמה (6+ תווים)"
+                                  dir="ltr"
+                                  className="bulk-input"
+                                />
+                              </td>
+                              <td>
+                                <select
+                                  value={row.role}
+                                  onChange={e => updateBulkRow(idx, 'role', e.target.value)}
+                                  className="bulk-select"
+                                >
+                                  <option value="viewer">צופה</option>
+                                  <option value="editor">עורך</option>
+                                  {isAdmin && <option value="principal">מנהל מוסד</option>}
+                                </select>
+                              </td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="bulk-remove-btn"
+                                  onClick={() => removeBulkRow(idx)}
+                                  title="הסר שורה"
+                                >
+                                  <Trash size={13} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={addBulkRow}>
+                        <Plus size={14} />
+                        הוסף שורה
+                      </button>
+                      <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                        {bulkRows.filter(r => r.fullName.trim() && r.email.trim()).length} שורות מלאות מתוך {bulkRows.length}
+                      </span>
+                    </div>
+                    {bulkError && (
+                      <div style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 500, marginTop: '0.5rem' }}>
+                        {bulkError}
+                      </div>
+                    )}
+                    <div className="modal-actions" style={{ marginTop: '0.75rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleBulkAdd}
+                        style={{ background: '#059669' }}
+                      >
+                        <UserPlus size={15} />
+                        הוסף {bulkRows.filter(r => r.fullName.trim() && r.email.trim()).length} אנשי צוות
+                      </button>
+                      <button type="button" className="btn btn-secondary" onClick={() => setShowBulkModal(false)}>ביטול</button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bulk-progress">
+                    <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.35rem' }}>
+                        {bulkProgress.current < bulkProgress.total ? 'מוסיף אנשי צוות...' : 'הוספה הושלמה'}
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                        {bulkProgress.current} / {bulkProgress.total}
+                      </div>
+                      <div className="bulk-progress-bar">
+                        <div
+                          className="bulk-progress-fill"
+                          style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="bulk-results">
+                      {bulkProgress.results.map((result, idx) => (
+                        <div key={idx} className={`bulk-result-item ${result.success ? 'bulk-result--success' : 'bulk-result--error'}`}>
+                          {result.success ? <Check size={14} /> : <AlertCircle size={14} />}
+                          <span>{result.name}</span>
+                          {!result.success && <span className="bulk-result-error">{result.error}</span>}
+                        </div>
+                      ))}
+                    </div>
+                    {bulkProgress.current === bulkProgress.total && (
+                      <div className="modal-actions" style={{ marginTop: '0.75rem' }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => { setShowBulkModal(false); setBulkProgress(null); }}
+                        >
+                          סגור
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
