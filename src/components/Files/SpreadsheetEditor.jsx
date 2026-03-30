@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle, Undo2, Redo2 } from 'lucide-react';
+import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle, Undo2, Redo2, ZoomIn, ZoomOut, Type } from 'lucide-react';
 import './Editors.css';
 
 function getColLetter(index) {
@@ -183,6 +183,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   const [clipboard, setClipboard] = useState(null); // { cells, type: 'cut'|'copy', startRow, startCol, endRow, endCol }
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
+  const [zoomLevel, setZoomLevel] = useState(100);
+  const [fontSize, setFontSize] = useState(13);
   const saveTimerRef = useRef(null);
   const cellInputRef = useRef(null);
   const formulaInputRef = useRef(null);
@@ -642,7 +644,60 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     triggerSave(next, headers, numCols, numRows);
   }
 
-  // Global Ctrl+Z / Ctrl+Y
+  // Handle system clipboard paste with auto-expand rows/columns
+  function handleSystemPaste(e) {
+    if (readOnly || !selectedCell) return;
+    if (editingCell) return; // let normal input paste work
+    const pasteData = e.clipboardData?.getData('text');
+    if (!pasteData) return;
+    // Only intercept multi-cell paste (contains tabs or newlines)
+    if (!pasteData.includes('\t') && !pasteData.includes('\n')) return;
+    e.preventDefault();
+
+    const ref = parseCellRef(selectedCell);
+    if (!ref) return;
+    pushUndo(cells);
+
+    const lines = pasteData.split('\n').filter((line, idx, arr) => {
+      // Remove trailing empty line from copy
+      if (idx === arr.length - 1 && !line.trim()) return false;
+      return true;
+    });
+
+    let newNumRows = numRows;
+    let newNumCols = numCols;
+
+    // Calculate required rows and cols
+    const neededRows = ref.row + lines.length;
+    const maxCols = lines.reduce((max, line) => Math.max(max, line.split('\t').length), 0);
+    const neededCols = ref.col + maxCols;
+
+    if (neededRows > newNumRows) newNumRows = neededRows;
+    if (neededCols > newNumCols) newNumCols = neededCols;
+
+    const newCells = { ...cells };
+    lines.forEach((line, lineIdx) => {
+      const cellValues = line.split('\t');
+      cellValues.forEach((val, colIdx) => {
+        const targetRef = getColLetter(ref.col + colIdx) + (ref.row + lineIdx + 1);
+        const trimmed = val.trim();
+        if (trimmed) {
+          if (trimmed.startsWith('=')) {
+            newCells[targetRef] = { ...newCells[targetRef], value: '', formula: trimmed };
+          } else {
+            newCells[targetRef] = { ...newCells[targetRef], value: trimmed, formula: '' };
+          }
+        }
+      });
+    });
+
+    setCells(newCells);
+    if (newNumRows !== numRows) setNumRows(newNumRows);
+    if (newNumCols !== numCols) setNumCols(newNumCols);
+    triggerSave(newCells, headers, newNumCols, newNumRows);
+  }
+
+  // Global Ctrl+Z / Ctrl+Y + paste
   useEffect(() => {
     function handleGlobalKeyDown(e) {
       if (readOnly) return;
@@ -655,7 +710,11 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
       }
     }
     document.addEventListener('keydown', handleGlobalKeyDown);
-    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+    document.addEventListener('paste', handleSystemPaste);
+    return () => {
+      document.removeEventListener('keydown', handleGlobalKeyDown);
+      document.removeEventListener('paste', handleSystemPaste);
+    };
   });
 
   // Context menu for cells/rows/columns
@@ -988,6 +1047,41 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
               </div>
             )}
           </div>
+          <div className="toolbar-separator" />
+          {/* Zoom controls */}
+          <div className="toolbar-zoom-group">
+            <button className="toolbar-btn" onClick={() => setZoomLevel(z => Math.max(50, z - 10))} title="הקטן">
+              <ZoomOut size={14} />
+            </button>
+            <input
+              type="range"
+              min="50"
+              max="200"
+              step="10"
+              value={zoomLevel}
+              onChange={e => setZoomLevel(Number(e.target.value))}
+              className="toolbar-zoom-slider"
+              title={`${zoomLevel}%`}
+            />
+            <button className="toolbar-btn" onClick={() => setZoomLevel(z => Math.min(200, z + 10))} title="הגדל">
+              <ZoomIn size={14} />
+            </button>
+            <span className="toolbar-zoom-label" onClick={() => setZoomLevel(100)} title="אפס תקריב">
+              {zoomLevel}%
+            </span>
+          </div>
+          <div className="toolbar-separator" />
+          {/* Font size */}
+          <div className="toolbar-font-group">
+            <Type size={14} />
+            <button className="toolbar-btn toolbar-btn--sm" onClick={() => setFontSize(s => Math.max(8, s - 1))} title="הקטן גופן">
+              <Minus size={10} />
+            </button>
+            <span className="toolbar-font-label">{fontSize}</span>
+            <button className="toolbar-btn toolbar-btn--sm" onClick={() => setFontSize(s => Math.min(24, s + 1))} title="הגדל גופן">
+              <Plus size={10} />
+            </button>
+          </div>
           {onToggleFullscreen && (
             <>
               <div className="toolbar-separator" />
@@ -1027,8 +1121,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
       </div>
 
       {/* Spreadsheet Grid */}
-      <div className="spreadsheet-container" dir="rtl">
-        <table className="spreadsheet-table" ref={tableRef}>
+      <div className="spreadsheet-container" dir="rtl" style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top right' }}>
+        <table className="spreadsheet-table" ref={tableRef} style={{ fontSize: `${fontSize}px` }}>
           <thead>
             <tr>
               <th className="corner-header">#</th>
