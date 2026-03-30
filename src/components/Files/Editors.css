@@ -384,6 +384,21 @@
   position: sticky;
   right: 0;
   z-index: 1;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.spreadsheet-table .row-header:hover {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.spreadsheet-table th.col-header {
+  cursor: pointer;
+}
+
+.spreadsheet-table th.col-header:hover {
+  background: #dbeafe;
 }
 
 .spreadsheet-table td.cell {
@@ -789,6 +804,40 @@
 /* Cell merged indicator */
 .cell--merged {
   background: #fefce8;
+}
+
+/* Freeze panes */
+.spreadsheet-table tr.row--frozen td.cell,
+.spreadsheet-table tr.row--frozen .row-header {
+  position: sticky;
+  z-index: 2;
+  background: #fff;
+}
+
+.spreadsheet-table td.cell.cell--freeze-row-border {
+  border-bottom: 3px solid #2563eb !important;
+}
+
+.spreadsheet-table td.cell.cell--freeze-col-border {
+  border-left: 3px solid #2563eb !important;
+}
+
+.spreadsheet-table .row-header.row-header--freeze-border {
+  border-bottom: 3px solid #2563eb !important;
+}
+
+.spreadsheet-table th.col-header.col-header--freeze-border {
+  border-left: 3px solid #2563eb !important;
+}
+
+.spreadsheet-table th.col-header--frozen {
+  background: #eff6ff;
+}
+
+.spreadsheet-table td.cell.cell--freeze-col {
+  position: sticky;
+  z-index: 2;
+  background: #fff;
 }
 
 /* Context menu (files/folders right-click) */

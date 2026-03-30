@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle, Undo2, Redo2, ZoomIn, ZoomOut, Type } from 'lucide-react';
+import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle, Undo2, Redo2, ZoomIn, ZoomOut, Type, Lock, Unlock } from 'lucide-react';
 import './Editors.css';
 
 function getColLetter(index) {
@@ -185,12 +185,14 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   const [redoStack, setRedoStack] = useState([]);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [fontSize, setFontSize] = useState(13);
+  const [freezeRow, setFreezeRow] = useState(initialData.freezeRow || 0); // number of frozen rows from top
+  const [freezeCol, setFreezeCol] = useState(initialData.freezeCol || 0); // number of frozen cols from right
   const saveTimerRef = useRef(null);
   const cellInputRef = useRef(null);
   const formulaInputRef = useRef(null);
   const tableRef = useRef(null);
 
-  const triggerSave = useCallback((newCells, newHeaders, cols, rows, colWidths, rHeights, merged, styles) => {
+  const triggerSave = useCallback((newCells, newHeaders, cols, rows, colWidths, rHeights, merged, styles, fRow, fCol) => {
     setSaveStatus('pending');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -203,10 +205,12 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
         rowHeights: rHeights || rowHeights,
         mergedCells: merged || mergedCells,
         cellStyles: styles || cellStyles,
+        freezeRow: fRow != null ? fRow : freezeRow,
+        freezeCol: fCol != null ? fCol : freezeCol,
       });
       setSaveStatus('saved');
     }, 800);
-  }, [onChange, columnWidths, rowHeights, mergedCells, cellStyles]);
+  }, [onChange, columnWidths, rowHeights, mergedCells, cellStyles, freezeRow, freezeCol]);
 
   useEffect(() => {
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
@@ -946,6 +950,41 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     setCellContextMenu(null);
   }
 
+  // Select entire row
+  function selectRow(ri) {
+    if (readOnly) return;
+    setSelection({ startRow: ri, startCol: 0, endRow: ri, endCol: numCols - 1 });
+    const ref = getColLetter(0) + (ri + 1);
+    setSelectedCell(ref);
+    setEditingCell(null);
+  }
+
+  // Select entire column
+  function selectCol(ci) {
+    if (readOnly) return;
+    setSelection({ startRow: 0, startCol: ci, endRow: numRows - 1, endCol: ci });
+    const ref = getColLetter(ci) + '1';
+    setSelectedCell(ref);
+    setEditingCell(null);
+  }
+
+  // Freeze/unfreeze
+  function toggleFreezeRow() {
+    if (!selection) return;
+    const row = Math.max(selection.startRow, selection.endRow) + 1;
+    const newFreeze = freezeRow === row ? 0 : row;
+    setFreezeRow(newFreeze);
+    triggerSave(cells, headers, numCols, numRows, undefined, undefined, undefined, undefined, newFreeze, undefined);
+  }
+
+  function toggleFreezeCol() {
+    if (!selection) return;
+    const col = Math.max(selection.startCol, selection.endCol) + 1;
+    const newFreeze = freezeCol === col ? 0 : col;
+    setFreezeCol(newFreeze);
+    triggerSave(cells, headers, numCols, numRows, undefined, undefined, undefined, undefined, undefined, newFreeze);
+  }
+
   function insertCalcFormula(calcId) {
     if (!selectedCell) return;
     const fn = CALC_FUNCTIONS.find(c => c.id === calcId);
@@ -1021,6 +1060,15 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
           <div className="toolbar-separator" />
           <button className="toolbar-btn" onClick={handleMergeCells} title="מזג/בטל מיזוג תאים" disabled={!selection}>
             <Merge size={14} /> מיזוג
+          </button>
+          <div className="toolbar-separator" />
+          <button className="toolbar-btn" onClick={toggleFreezeRow} disabled={!selection} title={freezeRow ? 'שחרר הקפאת שורות' : 'הקפא שורות'}>
+            {freezeRow ? <Unlock size={14} /> : <Lock size={14} />}
+            {freezeRow ? 'שחרר שורות' : 'הקפא שורות'}
+          </button>
+          <button className="toolbar-btn" onClick={toggleFreezeCol} disabled={!selection} title={freezeCol ? 'שחרר הקפאת עמודות' : 'הקפא עמודות'}>
+            {freezeCol ? <Unlock size={14} /> : <Lock size={14} />}
+            {freezeCol ? 'שחרר עמודות' : 'הקפא עמודות'}
           </button>
           <div className="toolbar-separator" />
           <div style={{ position: 'relative' }}>
@@ -1127,18 +1175,38 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
             <tr>
               <th className="corner-header">#</th>
               {Array.from({ length: numCols }, (_, ci) => (
-                <th key={ci} className="col-header" style={{ width: columnWidths[ci] || 100 }} onContextMenu={(e) => handleCellContextMenu(e, -1, ci, 'col')}>
+                <th
+                  key={ci}
+                  className={`col-header${ci < freezeCol ? ' col-header--frozen' : ''}${ci === freezeCol - 1 ? ' col-header--freeze-border' : ''}`}
+                  style={{ width: columnWidths[ci] || 100 }}
+                  onContextMenu={(e) => handleCellContextMenu(e, -1, ci, 'col')}
+                  onClick={() => selectCol(ci)}
+                >
                   <span className="col-letter">{getColLetter(ci)}</span>
-                  <input value={headers[ci] || ''} onChange={(e) => handleHeaderChange(ci, e.target.value)} placeholder={getColLetter(ci)} disabled={readOnly} />
+                  <input value={headers[ci] || ''} onChange={(e) => handleHeaderChange(ci, e.target.value)} placeholder={getColLetter(ci)} disabled={readOnly} onClick={e => e.stopPropagation()} />
                   <div className="col-resize-handle" onMouseDown={(e) => handleColumnResize(ci, e)} />
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: numRows }, (_, ri) => (
-              <tr key={ri} style={{ height: rowHeights[ri] || 32 }}>
-                <td className="row-header" style={{ position: 'relative' }} onContextMenu={(e) => handleCellContextMenu(e, ri, -1, 'row')}>
+            {Array.from({ length: numRows }, (_, ri) => {
+              // Calculate sticky top for frozen rows
+              let stickyTop = undefined;
+              if (ri < freezeRow) {
+                stickyTop = 0;
+                for (let r = 0; r < ri; r++) stickyTop += (rowHeights[r] || 32);
+                // Add header height (~40px)
+                stickyTop += 40;
+              }
+              return (
+              <tr key={ri} style={{ height: rowHeights[ri] || 32, ...(ri < freezeRow ? { position: 'sticky', top: stickyTop, zIndex: 4 } : {}) }} className={ri < freezeRow ? 'row--frozen' : ''}>
+                <td
+                  className={`row-header${ri === freezeRow - 1 ? ' row-header--freeze-border' : ''}`}
+                  style={{ position: 'sticky', right: 0 }}
+                  onContextMenu={(e) => handleCellContextMenu(e, ri, -1, 'row')}
+                  onClick={() => selectRow(ri)}
+                >
                   {ri + 1}
                   <div className="row-resize-handle" onMouseDown={(e) => handleRowResize(ri, e)} />
                 </td>
@@ -1167,7 +1235,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                   return (
                     <td
                       key={ci}
-                      className={`cell${isSelected ? ' cell--selected' : ''}${inSelection && !isSelected ? ' cell--in-selection' : ''}`}
+                      className={`cell${isSelected ? ' cell--selected' : ''}${inSelection && !isSelected ? ' cell--in-selection' : ''}${ri < freezeRow ? ' cell--freeze-row' : ''}${ci < freezeCol ? ' cell--freeze-col' : ''}${ri === freezeRow - 1 ? ' cell--freeze-row-border' : ''}${ci === freezeCol - 1 ? ' cell--freeze-col-border' : ''}`}
                       data-ref={cellRefStr}
                       colSpan={colSpan > 1 ? colSpan : undefined}
                       rowSpan={rowSpan > 1 ? rowSpan : undefined}
@@ -1181,9 +1249,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                       style={{
                         width: columnWidths[ci] || 100,
                         height: rowHeights[ri] || 32,
-                        background: style.bg || undefined,
-                        color: style.color || undefined,
                       }}
+                      data-bg={style.bg || undefined}
                     >
                       {isEditing ? (
                         <input
@@ -1207,7 +1274,13 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                           dir="ltr"
                         />
                       ) : (
-                        <div className={`cell-display${isFormula ? ' cell-display--formula' : ''}${isError ? ' cell-display--error' : ''}`}>
+                        <div
+                          className={`cell-display${isFormula ? ' cell-display--formula' : ''}${isError ? ' cell-display--error' : ''}`}
+                          style={{
+                            background: style.bg || undefined,
+                            color: style.color || undefined,
+                          }}
+                        >
                           {displayVal}
                         </div>
                       )}
@@ -1215,7 +1288,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
