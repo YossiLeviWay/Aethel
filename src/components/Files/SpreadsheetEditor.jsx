@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle, Undo2, Redo2, ZoomIn, ZoomOut, Type, Lock, Unlock } from 'lucide-react';
+import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle, Undo2, Redo2, ZoomIn, ZoomOut, Type, Lock, Unlock, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, WrapText, Strikethrough } from 'lucide-react';
 import './Editors.css';
 
 function getColLetter(index) {
@@ -531,8 +531,10 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   // Mouse drag selection
   function handleCellMouseDown(ri, ci, e) {
     if (readOnly || e.button !== 0 || formulaSelectMode) return;
-    if (!e.shiftKey) {
-      setIsDragging(true);
+    setIsDragging(true);
+    if (e.shiftKey && selection) {
+      setSelection(prev => prev ? { ...prev, endRow: ri, endCol: ci } : { startRow: ri, startCol: ci, endRow: ri, endCol: ci });
+    } else {
       setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
     }
   }
@@ -615,6 +617,43 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     setCellStyles(newStyles);
     setShowTextColorPicker(false);
     triggerSave(cells, headers, numCols, numRows, columnWidths, rowHeights, mergedCells, newStyles);
+  }
+
+  // Apply a style property to selection
+  function applyStyleProp(prop, value) {
+    if (!selection) return;
+    pushUndo();
+    const minR = Math.min(selection.startRow, selection.endRow);
+    const maxR = Math.max(selection.startRow, selection.endRow);
+    const minC = Math.min(selection.startCol, selection.endCol);
+    const maxC = Math.max(selection.startCol, selection.endCol);
+    const newStyles = { ...cellStyles };
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        const key = `${r}-${c}`;
+        const cur = newStyles[key] || {};
+        // Toggle boolean values
+        if (value === 'toggle') {
+          newStyles[key] = { ...cur, [prop]: !cur[prop] };
+        } else {
+          newStyles[key] = { ...cur, [prop]: value };
+        }
+      }
+    }
+    setCellStyles(newStyles);
+    triggerSave(cells, headers, numCols, numRows, columnWidths, rowHeights, mergedCells, newStyles);
+  }
+
+  // Apply font size to selection
+  function applyFontSize(size) {
+    applyStyleProp('fontSize', size);
+  }
+
+  // Get current selected cell style
+  function getSelectionStyle() {
+    if (!selection) return {};
+    const key = `${Math.min(selection.startRow, selection.endRow)}-${Math.min(selection.startCol, selection.endCol)}`;
+    return cellStyles[key] || {};
   }
 
   // Close context menu on click
@@ -977,21 +1016,29 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     setCellContextMenu(null);
   }
 
-  // Select entire row
-  function selectRow(ri) {
+  // Select entire row (shift extends)
+  function selectRow(ri, shiftKey) {
     if (readOnly) return;
-    setSelection({ startRow: ri, startCol: 0, endRow: ri, endCol: numCols - 1 });
-    const ref = getColLetter(0) + (ri + 1);
-    setSelectedCell(ref);
+    if (shiftKey && selection) {
+      setSelection(prev => ({ startRow: prev.startRow, startCol: 0, endRow: ri, endCol: numCols - 1 }));
+    } else {
+      setSelection({ startRow: ri, startCol: 0, endRow: ri, endCol: numCols - 1 });
+      const ref = getColLetter(0) + (ri + 1);
+      setSelectedCell(ref);
+    }
     setEditingCell(null);
   }
 
-  // Select entire column
-  function selectCol(ci) {
+  // Select entire column (shift extends)
+  function selectCol(ci, shiftKey) {
     if (readOnly) return;
-    setSelection({ startRow: 0, startCol: ci, endRow: numRows - 1, endCol: ci });
-    const ref = getColLetter(ci) + '1';
-    setSelectedCell(ref);
+    if (shiftKey && selection) {
+      setSelection(prev => ({ startRow: 0, startCol: prev.startCol, endRow: numRows - 1, endCol: ci }));
+    } else {
+      setSelection({ startRow: 0, startCol: ci, endRow: numRows - 1, endCol: ci });
+      const ref = getColLetter(ci) + '1';
+      setSelectedCell(ref);
+    }
     setEditingCell(null);
   }
 
@@ -1056,117 +1103,141 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   const stats = getSelectionStats();
+  const curStyle = getSelectionStyle();
 
   return (
     <div className={`spreadsheet-editor ${isFullscreen ? 'spreadsheet-editor--fullscreen' : ''}`}>
       {!readOnly && (
-        <div className="spreadsheet-toolbar">
-          <button className="toolbar-btn" onClick={handleUndo} disabled={undoStack.length === 0} title="ביטול (Ctrl+Z)"><Undo2 size={14} /></button>
-          <button className="toolbar-btn" onClick={handleRedo} disabled={redoStack.length === 0} title="חזרה (Ctrl+Y)"><Redo2 size={14} /></button>
-          <div className="toolbar-separator" />
-          <button className="toolbar-btn" onClick={addColumn} title="הוסף עמודה"><Plus size={14} /> עמודה</button>
-          <button className="toolbar-btn toolbar-btn--danger" onClick={removeColumn} disabled={numCols <= 1} title="הסר עמודה"><Minus size={14} /> עמודה</button>
-          <div className="toolbar-separator" />
-          <button className="toolbar-btn" onClick={addRow} title="הוסף שורה"><Plus size={14} /> שורה</button>
-          <button className="toolbar-btn toolbar-btn--danger" onClick={removeRow} disabled={numRows <= 1} title="הסר שורה"><Minus size={14} /> שורה</button>
-          <div className="toolbar-separator" />
-          <div style={{ position: 'relative' }}>
-            <button className="toolbar-btn" onClick={() => { setShowCalcMenu(!showCalcMenu); setShowCellColorPicker(false); setShowTextColorPicker(false); }} title="חישובים">
-              <Calculator size={14} /> חישובים
-            </button>
-            {showCalcMenu && (
-              <div className="calc-menu">
-                {CALC_FUNCTIONS.map(fn => (
-                  <button key={fn.id} className="calc-menu-item" onClick={() => insertCalcFormula(fn.id)}>
-                    <span className="calc-menu-icon">{fn.icon}</span>
-                    <span>{fn.label}</span>
-                    <span className="calc-menu-syntax">{fn.syntax}()</span>
-                  </button>
-                ))}
+        <div className="spreadsheet-ribbon">
+          {/* Row 1: Main ribbon */}
+          <div className="ribbon-row">
+            {/* Undo/Redo group */}
+            <div className="ribbon-group">
+              <button className="ribbon-btn" onClick={handleUndo} disabled={undoStack.length === 0} title="ביטול (Ctrl+Z)"><Undo2 size={14} /></button>
+              <button className="ribbon-btn" onClick={handleRedo} disabled={redoStack.length === 0} title="חזרה (Ctrl+Y)"><Redo2 size={14} /></button>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Font group */}
+            <div className="ribbon-group">
+              <div className="ribbon-font-size">
+                <button className="ribbon-btn ribbon-btn--sm" onClick={() => { const s = (curStyle.fontSize || fontSize) - 1; if (s >= 8) applyFontSize(s); }} title="הקטן גופן"><Minus size={10} /></button>
+                <span className="ribbon-font-label">{curStyle.fontSize || fontSize}</span>
+                <button className="ribbon-btn ribbon-btn--sm" onClick={() => { const s = (curStyle.fontSize || fontSize) + 1; if (s <= 36) applyFontSize(s); }} title="הגדל גופן"><Plus size={10} /></button>
               </div>
-            )}
-          </div>
-          <div className="toolbar-separator" />
-          <button className="toolbar-btn" onClick={handleMergeCells} title="מזג/בטל מיזוג תאים" disabled={!selection}>
-            <Merge size={14} /> מיזוג
-          </button>
-          <div className="toolbar-separator" />
-          <button className="toolbar-btn" onClick={toggleFreezeRow} disabled={!selection} title={freezeRow ? 'שחרר הקפאת שורות' : 'הקפא שורות'}>
-            {freezeRow ? <Unlock size={14} /> : <Lock size={14} />}
-            {freezeRow ? 'שחרר שורות' : 'הקפא שורות'}
-          </button>
-          <button className="toolbar-btn" onClick={toggleFreezeCol} disabled={!selection} title={freezeCol ? 'שחרר הקפאת עמודות' : 'הקפא עמודות'}>
-            {freezeCol ? <Unlock size={14} /> : <Lock size={14} />}
-            {freezeCol ? 'שחרר עמודות' : 'הקפא עמודות'}
-          </button>
-          <div className="toolbar-separator" />
-          <div style={{ position: 'relative' }}>
-            <button className="toolbar-btn" onClick={() => { setShowCellColorPicker(!showCellColorPicker); setShowCalcMenu(false); setShowTextColorPicker(false); }} title="צבע רקע תא">
-              <Paintbrush size={14} />
-            </button>
-            {showCellColorPicker && (
-              <div className="color-picker-popup">
-                {CELL_COLORS.map(c => (
-                  <button key={c} className="color-swatch-btn" style={{ background: c }} onClick={() => applyCellColor(c)} />
-                ))}
+              <button className={`ribbon-btn${curStyle.bold ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('bold', 'toggle')} title="מודגש (B)"><Bold size={14} /></button>
+              <button className={`ribbon-btn${curStyle.italic ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('italic', 'toggle')} title="נטוי (I)"><Italic size={14} /></button>
+              <button className={`ribbon-btn${curStyle.underline ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('underline', 'toggle')} title="קו תחתון (U)"><Underline size={14} /></button>
+              <button className={`ribbon-btn${curStyle.strikethrough ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('strikethrough', 'toggle')} title="קו חוצה"><Strikethrough size={14} /></button>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Colors group */}
+            <div className="ribbon-group">
+              <div style={{ position: 'relative' }}>
+                <button className="ribbon-btn ribbon-btn--color" onClick={() => { setShowCellColorPicker(!showCellColorPicker); setShowCalcMenu(false); setShowTextColorPicker(false); }} title="צבע רקע">
+                  <Paintbrush size={14} />
+                  <span className="ribbon-color-indicator" style={{ background: curStyle.bg || '#fff' }} />
+                </button>
+                {showCellColorPicker && (
+                  <div className="color-picker-popup">
+                    {CELL_COLORS.map(c => (
+                      <button key={c} className="color-swatch-btn" style={{ background: c }} onClick={() => applyCellColor(c)} />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <div style={{ position: 'relative' }}>
-            <button className="toolbar-btn" onClick={() => { setShowTextColorPicker(!showTextColorPicker); setShowCalcMenu(false); setShowCellColorPicker(false); }} title="צבע טקסט">
-              <Palette size={14} />
-            </button>
-            {showTextColorPicker && (
-              <div className="color-picker-popup">
-                {TEXT_COLORS.map(c => (
-                  <button key={c} className="color-swatch-btn" style={{ background: c }} onClick={() => applyTextColor(c)} />
-                ))}
+              <div style={{ position: 'relative' }}>
+                <button className="ribbon-btn ribbon-btn--color" onClick={() => { setShowTextColorPicker(!showTextColorPicker); setShowCalcMenu(false); setShowCellColorPicker(false); }} title="צבע טקסט">
+                  <Type size={14} />
+                  <span className="ribbon-color-indicator" style={{ background: curStyle.color || '#1e293b' }} />
+                </button>
+                {showTextColorPicker && (
+                  <div className="color-picker-popup">
+                    {TEXT_COLORS.map(c => (
+                      <button key={c} className="color-swatch-btn" style={{ background: c }} onClick={() => applyTextColor(c)} />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <div className="toolbar-separator" />
-          {/* Zoom controls */}
-          <div className="toolbar-zoom-group">
-            <button className="toolbar-btn" onClick={() => setZoomLevel(z => Math.max(50, z - 10))} title="הקטן">
-              <ZoomOut size={14} />
-            </button>
-            <input
-              type="range"
-              min="50"
-              max="200"
-              step="10"
-              value={zoomLevel}
-              onChange={e => setZoomLevel(Number(e.target.value))}
-              className="toolbar-zoom-slider"
-              title={`${zoomLevel}%`}
-            />
-            <button className="toolbar-btn" onClick={() => setZoomLevel(z => Math.min(200, z + 10))} title="הגדל">
-              <ZoomIn size={14} />
-            </button>
-            <span className="toolbar-zoom-label" onClick={() => setZoomLevel(100)} title="אפס תקריב">
-              {zoomLevel}%
-            </span>
-          </div>
-          <div className="toolbar-separator" />
-          {/* Font size */}
-          <div className="toolbar-font-group">
-            <Type size={14} />
-            <button className="toolbar-btn toolbar-btn--sm" onClick={() => setFontSize(s => Math.max(8, s - 1))} title="הקטן גופן">
-              <Minus size={10} />
-            </button>
-            <span className="toolbar-font-label">{fontSize}</span>
-            <button className="toolbar-btn toolbar-btn--sm" onClick={() => setFontSize(s => Math.min(24, s + 1))} title="הגדל גופן">
-              <Plus size={10} />
-            </button>
-          </div>
-          {onToggleFullscreen && (
-            <>
-              <div className="toolbar-separator" />
-              <button className="toolbar-btn" onClick={onToggleFullscreen} title={isFullscreen ? 'יציאה ממסך מלא' : 'מסך מלא'}>
-                {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Alignment group */}
+            <div className="ribbon-group">
+              <button className={`ribbon-btn${curStyle.textAlign === 'right' || !curStyle.textAlign ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'right')} title="ימין"><AlignRight size={14} /></button>
+              <button className={`ribbon-btn${curStyle.textAlign === 'center' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'center')} title="מרכז"><AlignCenter size={14} /></button>
+              <button className={`ribbon-btn${curStyle.textAlign === 'left' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'left')} title="שמאל"><AlignLeft size={14} /></button>
+              <div className="ribbon-group-break" />
+              <button className={`ribbon-btn${!curStyle.verticalAlign || curStyle.verticalAlign === 'middle' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'middle')} title="אמצע אנכי"><AlignVerticalJustifyCenter size={14} /></button>
+              <button className={`ribbon-btn${curStyle.verticalAlign === 'top' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'top')} title="למעלה"><AlignVerticalJustifyStart size={14} /></button>
+              <button className={`ribbon-btn${curStyle.verticalAlign === 'bottom' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'bottom')} title="למטה"><AlignVerticalJustifyEnd size={14} /></button>
+              <div className="ribbon-group-break" />
+              <button className={`ribbon-btn${curStyle.wrapText ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('wrapText', 'toggle')} title="גלישת טקסט"><WrapText size={14} /></button>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Structure group */}
+            <div className="ribbon-group">
+              <button className="ribbon-btn" onClick={addColumn} title="הוסף עמודה"><Plus size={12} /><span className="ribbon-label">עמודה</span></button>
+              <button className="ribbon-btn" onClick={addRow} title="הוסף שורה"><Plus size={12} /><span className="ribbon-label">שורה</span></button>
+              <button className="ribbon-btn ribbon-btn--danger" onClick={removeColumn} disabled={numCols <= 1} title="הסר עמודה"><Minus size={12} /><span className="ribbon-label">עמודה</span></button>
+              <button className="ribbon-btn ribbon-btn--danger" onClick={removeRow} disabled={numRows <= 1} title="הסר שורה"><Minus size={12} /><span className="ribbon-label">שורה</span></button>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Merge & Freeze group */}
+            <div className="ribbon-group">
+              <button className="ribbon-btn" onClick={handleMergeCells} disabled={!selection} title="מזג/בטל מיזוג"><Merge size={14} /></button>
+              <button className={`ribbon-btn${freezeRow ? ' ribbon-btn--active' : ''}`} onClick={toggleFreezeRow} disabled={!selection} title={freezeRow ? 'שחרר שורות' : 'הקפא שורות'}>
+                {freezeRow ? <Unlock size={14} /> : <Lock size={14} />}
               </button>
-            </>
-          )}
+              <button className={`ribbon-btn${freezeCol ? ' ribbon-btn--active' : ''}`} onClick={toggleFreezeCol} disabled={!selection} title={freezeCol ? 'שחרר עמודות' : 'הקפא עמודות'}>
+                {freezeCol ? <Unlock size={14} /> : <Lock size={14} />}
+              </button>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Calc group */}
+            <div className="ribbon-group">
+              <div style={{ position: 'relative' }}>
+                <button className="ribbon-btn" onClick={() => { setShowCalcMenu(!showCalcMenu); setShowCellColorPicker(false); setShowTextColorPicker(false); }} title="חישובים">
+                  <Calculator size={14} />
+                </button>
+                {showCalcMenu && (
+                  <div className="calc-menu">
+                    {CALC_FUNCTIONS.map(fn => (
+                      <button key={fn.id} className="calc-menu-item" onClick={() => insertCalcFormula(fn.id)}>
+                        <span className="calc-menu-icon">{fn.icon}</span>
+                        <span>{fn.label}</span>
+                        <span className="calc-menu-syntax">{fn.syntax}()</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Zoom */}
+            <div className="ribbon-group">
+              <div className="toolbar-zoom-group">
+                <button className="ribbon-btn ribbon-btn--sm" onClick={() => setZoomLevel(z => Math.max(50, z - 10))} title="הקטן"><ZoomOut size={12} /></button>
+                <input type="range" min="50" max="200" step="10" value={zoomLevel} onChange={e => setZoomLevel(Number(e.target.value))} className="toolbar-zoom-slider" title={`${zoomLevel}%`} />
+                <button className="ribbon-btn ribbon-btn--sm" onClick={() => setZoomLevel(z => Math.min(200, z + 10))} title="הגדל"><ZoomIn size={12} /></button>
+                <span className="toolbar-zoom-label" onClick={() => setZoomLevel(100)}>{zoomLevel}%</span>
+              </div>
+            </div>
+
+            {onToggleFullscreen && (
+              <>
+                <div className="ribbon-separator" />
+                <button className="ribbon-btn" onClick={onToggleFullscreen} title={isFullscreen ? 'יציאה ממסך מלא' : 'מסך מלא'}>
+                  {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -1209,7 +1280,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                   className={`col-header${ci < freezeCol ? ' col-header--frozen' : ''}${ci === freezeCol - 1 ? ' col-header--freeze-border' : ''}`}
                   style={{ width: columnWidths[ci] || 100 }}
                   onContextMenu={(e) => handleCellContextMenu(e, -1, ci, 'col')}
-                  onClick={() => selectCol(ci)}
+                  onClick={(e) => selectCol(ci, e.shiftKey)}
                 >
                   <span className="col-letter">{getColLetter(ci)}</span>
                   <input value={headers[ci] || ''} onChange={(e) => handleHeaderChange(ci, e.target.value)} placeholder={getColLetter(ci)} disabled={readOnly} onClick={e => e.stopPropagation()} />
@@ -1234,7 +1305,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                   className={`row-header${ri === freezeRow - 1 ? ' row-header--freeze-border' : ''}`}
                   style={{ position: 'sticky', right: 0 }}
                   onContextMenu={(e) => handleCellContextMenu(e, ri, -1, 'row')}
-                  onClick={() => selectRow(ri)}
+                  onClick={(e) => selectRow(ri, e.shiftKey)}
                 >
                   {ri + 1}
                   <div className="row-resize-handle" onMouseDown={(e) => handleRowResize(ri, e)} />
@@ -1308,6 +1379,15 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                           style={{
                             background: style.bg || undefined,
                             color: style.color || undefined,
+                            fontWeight: style.bold ? 700 : undefined,
+                            fontStyle: style.italic ? 'italic' : undefined,
+                            textDecoration: [style.underline && 'underline', style.strikethrough && 'line-through'].filter(Boolean).join(' ') || undefined,
+                            textAlign: style.textAlign || undefined,
+                            justifyContent: style.textAlign === 'center' ? 'center' : style.textAlign === 'left' ? 'flex-end' : undefined,
+                            alignItems: style.verticalAlign === 'top' ? 'flex-start' : style.verticalAlign === 'bottom' ? 'flex-end' : undefined,
+                            fontSize: style.fontSize ? `${style.fontSize}px` : undefined,
+                            flexWrap: style.wrapText ? 'wrap' : undefined,
+                            whiteSpace: style.wrapText ? 'pre-wrap' : undefined,
                           }}
                         >
                           {displayVal}
