@@ -296,7 +296,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   function commitCell(cellRef, rawValue) {
-    pushUndo(cells);
+    pushUndo();
     const newCells = { ...cells };
     const trimmed = (rawValue || '').trim();
     if (!trimmed) {
@@ -552,6 +552,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   // Merge cells
   function handleMergeCells() {
     if (!selection) return;
+    pushUndo();
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -579,6 +580,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   // Cell background color
   function applyCellColor(color) {
     if (!selection) return;
+    pushUndo();
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -598,6 +600,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   // Text color
   function applyTextColor(color) {
     if (!selection) return;
+    pushUndo();
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -621,31 +624,55 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     return () => document.removeEventListener('click', handleClick);
   }, []);
 
-  // Undo/Redo
-  function pushUndo(prevCells) {
+  // Undo/Redo - full state snapshots
+  function createSnapshot() {
+    return {
+      cells: { ...cells },
+      cellStyles: { ...cellStyles },
+      mergedCells: [...mergedCells],
+      numRows,
+      numCols,
+      headers: { ...headers },
+      freezeRow,
+      freezeCol,
+    };
+  }
+
+  function pushUndo(snapshot) {
+    const snap = snapshot || createSnapshot();
     setUndoStack(us => {
-      const next = [...us, { ...prevCells }];
+      const next = [...us, snap];
       return next.length > 50 ? next.slice(-50) : next;
     });
     setRedoStack([]);
   }
 
+  function applySnapshot(snap) {
+    setCells(snap.cells);
+    setCellStyles(snap.cellStyles);
+    setMergedCells(snap.mergedCells);
+    setNumRows(snap.numRows);
+    setNumCols(snap.numCols);
+    setHeaders(snap.headers);
+    setFreezeRow(snap.freezeRow);
+    setFreezeCol(snap.freezeCol);
+    triggerSave(snap.cells, snap.headers, snap.numCols, snap.numRows, columnWidths, rowHeights, snap.mergedCells, snap.cellStyles, snap.freezeRow, snap.freezeCol);
+  }
+
   function handleUndo() {
     if (undoStack.length === 0) return;
     const prev = undoStack[undoStack.length - 1];
-    setRedoStack(rs => [...rs, { ...cells }]);
+    setRedoStack(rs => [...rs, createSnapshot()]);
     setUndoStack(us => us.slice(0, -1));
-    setCells(prev);
-    triggerSave(prev, headers, numCols, numRows);
+    applySnapshot(prev);
   }
 
   function handleRedo() {
     if (redoStack.length === 0) return;
     const next = redoStack[redoStack.length - 1];
-    setUndoStack(us => [...us, { ...cells }]);
+    setUndoStack(us => [...us, createSnapshot()]);
     setRedoStack(rs => rs.slice(0, -1));
-    setCells(next);
-    triggerSave(next, headers, numCols, numRows);
+    applySnapshot(next);
   }
 
   // Handle system clipboard paste with auto-expand rows/columns
@@ -660,7 +687,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
     const ref = parseCellRef(selectedCell);
     if (!ref) return;
-    pushUndo(cells);
+    pushUndo();
 
     const lines = pasteData.split('\n').filter((line, idx, arr) => {
       // Remove trailing empty line from copy
@@ -735,7 +762,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function cutSelection() {
     if (!selection) return;
-    pushUndo(cells);
+    pushUndo();
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -781,7 +808,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     if (!clipboard || !selectedCell) return;
     const ref = parseCellRef(selectedCell);
     if (!ref) return;
-    pushUndo(cells);
+    pushUndo();
     const newCells = { ...cells };
     for (let r = 0; r < clipboard.rows; r++) {
       for (let c = 0; c < clipboard.cols; c++) {
@@ -801,7 +828,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function clearSelectionContents() {
     if (!selection) return;
-    pushUndo(cells);
+    pushUndo();
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -818,7 +845,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   function insertRowAt(rowIndex) {
-    pushUndo(cells);
+    pushUndo();
     // Shift all cells from rowIndex down by 1
     const newCells = {};
     Object.entries(cells).forEach(([key, val]) => {
@@ -838,7 +865,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   function insertColAt(colIndex) {
-    pushUndo(cells);
+    pushUndo();
     const newCells = {};
     const newHeaders = {};
     Object.entries(cells).forEach(([key, val]) => {
@@ -865,7 +892,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function deleteRowAt(rowIndex) {
     if (numRows <= 1) return;
-    pushUndo(cells);
+    pushUndo();
     const newCells = {};
     Object.entries(cells).forEach(([key, val]) => {
       const parsed = parseCellRef(key);
@@ -887,7 +914,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function deleteColAt(colIndex) {
     if (numCols <= 1) return;
-    pushUndo(cells);
+    pushUndo();
     const newCells = {};
     const newHeaders = {};
     Object.entries(cells).forEach(([key, val]) => {
@@ -936,7 +963,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     });
 
     // Rearrange all columns based on new row order
-    pushUndo(cells);
+    pushUndo();
     const newCells = {};
     rowData.forEach((item, newRow) => {
       for (let c = 0; c < numCols; c++) {
@@ -971,6 +998,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   // Freeze/unfreeze
   function toggleFreezeRow() {
     if (!selection) return;
+    pushUndo();
     const row = Math.max(selection.startRow, selection.endRow) + 1;
     const newFreeze = freezeRow === row ? 0 : row;
     setFreezeRow(newFreeze);
@@ -979,6 +1007,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function toggleFreezeCol() {
     if (!selection) return;
+    pushUndo();
     const col = Math.max(selection.startCol, selection.endCol) + 1;
     const newFreeze = freezeCol === col ? 0 : col;
     setFreezeCol(newFreeze);
@@ -1350,7 +1379,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
               </button>
               <div className="context-menu-divider" />
               <button className="context-menu-item" onClick={() => {
-                pushUndo(cells);
+                pushUndo();
                 const newCells = { ...cells };
                 for (let c = 0; c < numCols; c++) delete newCells[getColLetter(c) + (cellContextMenu.row + 1)];
                 setCells(newCells);
@@ -1376,7 +1405,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
               </button>
               <div className="context-menu-divider" />
               <button className="context-menu-item" onClick={() => {
-                pushUndo(cells);
+                pushUndo();
                 const newCells = { ...cells };
                 for (let r = 0; r < numRows; r++) delete newCells[getColLetter(cellContextMenu.col) + (r + 1)];
                 setCells(newCells);

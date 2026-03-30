@@ -418,12 +418,15 @@
 .spreadsheet-table td.cell.cell--selected {
   outline: 2px solid #2563eb;
   outline-offset: -1px;
-  background: #eff6ff;
   z-index: 1;
 }
 
-.spreadsheet-table td.cell.cell--in-selection {
-  background: #dbeafe;
+.spreadsheet-table td.cell.cell--selected .cell-display {
+  background: rgba(219, 234, 254, 0.5) !important;
+}
+
+.spreadsheet-table td.cell.cell--in-selection .cell-display {
+  background: rgba(219, 234, 254, 0.6) !important;
 }
 
 .spreadsheet-table td.cell .cell-display {
@@ -438,6 +441,7 @@
   text-overflow: ellipsis;
   direction: rtl;
   text-align: right;
+  pointer-events: none;
 }
 
 .spreadsheet-table td.cell .cell-display.cell-display--formula {
@@ -809,8 +813,6 @@
 /* Freeze panes */
 .spreadsheet-table tr.row--frozen td.cell,
 .spreadsheet-table tr.row--frozen .row-header {
-  position: sticky;
-  z-index: 2;
   background: #fff;
 }
 
@@ -835,8 +837,6 @@
 }
 
 .spreadsheet-table td.cell.cell--freeze-col {
-  position: sticky;
-  z-index: 2;
   background: #fff;
 }
 
