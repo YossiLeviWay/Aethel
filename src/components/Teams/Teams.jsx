@@ -11,10 +11,12 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  onSnapshot
+  onSnapshot,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import Header from '../Layout/Header';
-import { Plus, Trash2, Edit3, Users, X, Search, UserPlus, UserMinus } from 'lucide-react';
+import { Plus, Trash2, Edit3, Users, X, Search, UserPlus, UserMinus, Shield } from 'lucide-react';
 import '../Gantt/Gantt.css';
 import './Teams.css';
 
@@ -30,7 +32,15 @@ export default function Teams() {
   const [memberSearch, setMemberSearch] = useState('');
 
   const schoolId = selectedSchool || userData?.schoolId;
-  const canEdit = isPrincipal() || isGlobalAdmin();
+  const isAdmin = isPrincipal() || isGlobalAdmin();
+  const hasTeamsPermission = isAdmin || userData?.permissions?.teams_edit;
+  const canEdit = hasTeamsPermission;
+
+  // Check if user can manage a specific team (admin, has teams_edit permission, or is team manager)
+  function canManageTeam(team) {
+    if (isAdmin || hasTeamsPermission) return true;
+    return (team.managerIds || []).includes(userData?.uid);
+  }
 
   useEffect(() => {
     if (!schoolId) return;
@@ -118,6 +128,10 @@ export default function Teams() {
     await updateDoc(doc(db, `teams_${schoolId}`, teamId), {
       memberIds: [...(team.memberIds || []), userId]
     });
+    // Sync teamIds on user doc
+    try {
+      await updateDoc(doc(db, 'users', userId), { teamIds: arrayUnion(teamId) });
+    } catch (err) { console.warn('Could not sync teamIds:', err); }
     // Notify the added user
     createNotification(userId, {
       title: `הוספת לצוות "${team.name}"`,
@@ -133,6 +147,25 @@ export default function Teams() {
     await updateDoc(doc(db, `teams_${schoolId}`, teamId), {
       memberIds: (team.memberIds || []).filter(id => id !== userId)
     });
+    // Sync teamIds on user doc
+    try {
+      await updateDoc(doc(db, 'users', userId), { teamIds: arrayRemove(teamId) });
+    } catch (err) { console.warn('Could not sync teamIds:', err); }
+  }
+
+  async function toggleManager(teamId, userId) {
+    const team = teams.find(t => t.id === teamId);
+    if (!team) return;
+    const managers = team.managerIds || [];
+    if (managers.includes(userId)) {
+      await updateDoc(doc(db, `teams_${schoolId}`, teamId), {
+        managerIds: managers.filter(id => id !== userId)
+      });
+    } else {
+      await updateDoc(doc(db, `teams_${schoolId}`, teamId), {
+        managerIds: [...managers, userId]
+      });
+    }
   }
 
   function getMemberName(userId) {
@@ -227,17 +260,21 @@ export default function Teams() {
                   <h3 className="team-card-name">{team.name}</h3>
                   {team.description && <p className="team-card-desc">{team.description}</p>}
                 </div>
-                {canEdit && (
+                {canManageTeam(team) && (
                   <div className="team-card-actions">
                     <button className="icon-btn" title="ניהול חברים" onClick={() => { setManageTeam(team.id); setMemberSearch(''); }}>
                       <UserPlus size={15} />
                     </button>
-                    <button className="icon-btn" title="עריכה" onClick={() => handleEdit(team)}>
-                      <Edit3 size={15} />
-                    </button>
-                    <button className="icon-btn icon-btn--danger" title="מחיקה" onClick={() => handleDelete(team.id)}>
-                      <Trash2 size={15} />
-                    </button>
+                    {canEdit && (
+                      <>
+                        <button className="icon-btn" title="עריכה" onClick={() => handleEdit(team)}>
+                          <Edit3 size={15} />
+                        </button>
+                        <button className="icon-btn icon-btn--danger" title="מחיקה" onClick={() => handleDelete(team.id)}>
+                          <Trash2 size={15} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -248,7 +285,10 @@ export default function Teams() {
                     <div key={memberId} className="team-member-chip">
                       <span className="team-member-avatar">{getMemberName(memberId).charAt(0)}</span>
                       <span className="team-member-name">{getMemberName(memberId)}</span>
-                      {canEdit && (
+                      {(team.managerIds || []).includes(memberId) && (
+                        <span className="team-manager-badge" title="מנהל צוות"><Shield size={10} /></span>
+                      )}
+                      {canManageTeam(team) && (
                         <button
                           className="team-member-remove"
                           onClick={() => removeMember(team.id, memberId)}
@@ -287,19 +327,32 @@ export default function Teams() {
                 <div className="manage-section">
                   <h4 className="manage-section-title">חברי צוות נוכחיים ({currentMembers.length})</h4>
                   <div className="manage-member-list">
-                    {currentMembers.map(memberId => (
-                      <div key={memberId} className="manage-member-item">
-                        <div className="assign-avatar">{getMemberName(memberId).charAt(0)}</div>
-                        <span className="assign-name">{getMemberName(memberId)}</span>
-                        <button
-                          className="icon-btn icon-btn--danger"
-                          onClick={() => removeMember(manageTeam, memberId)}
-                          title="הסרה"
-                        >
-                          <UserMinus size={14} />
-                        </button>
-                      </div>
-                    ))}
+                    {currentMembers.map(memberId => {
+                      const isManager = (managedTeam.managerIds || []).includes(memberId);
+                      return (
+                        <div key={memberId} className="manage-member-item">
+                          <div className="assign-avatar">{getMemberName(memberId).charAt(0)}</div>
+                          <span className="assign-name">{getMemberName(memberId)}</span>
+                          {isManager && <span className="team-manager-badge" title="מנהל צוות"><Shield size={10} /> מנהל</span>}
+                          {isAdmin && (
+                            <button
+                              className={`icon-btn${isManager ? ' icon-btn--active' : ''}`}
+                              onClick={() => toggleManager(manageTeam, memberId)}
+                              title={isManager ? 'הסר כמנהל צוות' : 'הגדר כמנהל צוות'}
+                            >
+                              <Shield size={14} />
+                            </button>
+                          )}
+                          <button
+                            className="icon-btn icon-btn--danger"
+                            onClick={() => removeMember(manageTeam, memberId)}
+                            title="הסרה"
+                          >
+                            <UserMinus size={14} />
+                          </button>
+                        </div>
+                      );
+                    })}
                     {currentMembers.length === 0 && (
                       <p style={{ color: '#94a3b8', fontSize: '0.82rem', textAlign: 'center', padding: '0.5rem' }}>
                         אין חברים עדיין

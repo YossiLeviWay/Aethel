@@ -51,7 +51,7 @@ import '../Gantt/Gantt.css';
 import './Files.css';
 
 export default function FileManager() {
-  const { userData, currentUser, selectedSchool, isPrincipal, isGlobalAdmin } = useAuth();
+  const { userData, currentUser, selectedSchool, isPrincipal, isGlobalAdmin, isViewer } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const uid = currentUser?.uid;
   const [folders, setFolders] = useState([]);
@@ -93,6 +93,7 @@ export default function FileManager() {
   }
 
   function userCanCreateFiles() {
+    if (isViewer()) return false;
     if (canManage) return true;
     const folder = folders.find(f => f.id === selectedFolder);
     if (!folder) return false;
@@ -285,6 +286,7 @@ export default function FileManager() {
   }, [editingFile?.id]);
 
   async function deleteFolder(folderId) {
+    if (isViewer()) return;
     if (!confirm('האם למחוק תיקייה זו וכל תוכנה?')) return;
     const filesSnap = await getDocs(
       query(collection(db, `files_${schoolId}`), where('folderId', '==', folderId))
@@ -301,6 +303,7 @@ export default function FileManager() {
   }
 
   async function deleteFile(fileItem) {
+    if (isViewer()) return;
     if (!confirm('האם למחוק קובץ זה?')) return;
     if (fileItem.storagePath) {
       try { await deleteObject(ref(storage, fileItem.storagePath)); } catch {}
@@ -705,39 +708,46 @@ export default function FileManager() {
                         {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                       </button>
                     )}
-                    <span className="autosave-status">
-                      <span className={`autosave-dot-inline ${fileSaving ? 'autosave-dot-inline--saving' : ''}`} />
-                      {fileSaving ? 'שומר...' : 'שמירה אוטומטית'}
-                    </span>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => saveFileContent(editingFile.content)}
-                      disabled={fileSaving}
-                    >
-                      <Save size={14} />
-                      שמירה
-                    </button>
+                    {!isViewer() && (
+                      <>
+                        <span className="autosave-status">
+                          <span className={`autosave-dot-inline ${fileSaving ? 'autosave-dot-inline--saving' : ''}`} />
+                          {fileSaving ? 'שומר...' : 'שמירה אוטומטית'}
+                        </span>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => saveFileContent(editingFile.content)}
+                          disabled={fileSaving}
+                        >
+                          <Save size={14} />
+                          שמירה
+                        </button>
+                      </>
+                    )}
+                    {isViewer() && <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>צפייה בלבד</span>}
                   </div>
                 </div>
                 <div className="file-editor-body">
                   {editingFile.fileType === 'spreadsheet' ? (
                     <SpreadsheetEditor
                       data={typeof editingFile.content === 'string' ? JSON.parse(editingFile.content) : editingFile.content}
-                      onChange={(newData) => {
+                      onChange={isViewer() ? undefined : (newData) => {
                         const json = JSON.stringify(newData);
                         setEditingFile(prev => ({ ...prev, content: json }));
                         autoSave(json);
                       }}
                       onToggleFullscreen={() => setFullscreen(!fullscreen)}
                       isFullscreen={fullscreen}
+                      readOnly={isViewer()}
                     />
                   ) : (
                     <DocumentEditor
                       content={editingFile.content || ''}
-                      onChange={(newContent) => {
+                      onChange={isViewer() ? undefined : (newContent) => {
                         setEditingFile(prev => ({ ...prev, content: newContent }));
                         autoSave(newContent);
                       }}
+                      readOnly={isViewer()}
                     />
                   )}
                 </div>
@@ -773,11 +783,13 @@ export default function FileManager() {
                         )}
                       </div>
                     )}
-                    <label className="upload-btn">
-                      <Upload size={14} />
-                      {uploading ? 'מעלה...' : 'העלאת קובץ'}
-                      <input type="file" hidden onChange={e => handleUpload(e, selectedFolder)} disabled={uploading} />
-                    </label>
+                    {!isViewer() && (
+                      <label className="upload-btn">
+                        <Upload size={14} />
+                        {uploading ? 'מעלה...' : 'העלאת קובץ'}
+                        <input type="file" hidden onChange={e => handleUpload(e, selectedFolder)} disabled={uploading} />
+                      </label>
+                    )}
                   </div>
                 </div>
 

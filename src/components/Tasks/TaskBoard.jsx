@@ -44,7 +44,7 @@ const ASSIGNEE_TYPES = {
 };
 
 export default function TaskBoard() {
-  const { userData, selectedSchool, currentUser } = useAuth();
+  const { userData, selectedSchool, currentUser, isViewer, isPrincipal, isGlobalAdmin } = useAuth();
   const uid = currentUser?.uid;
   const [tasks, setTasks] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -303,8 +303,18 @@ export default function TaskBoard() {
     return '';
   }
 
+  const isAdmin = isPrincipal() || isGlobalAdmin();
+
   // Filter tasks
   const filteredTasks = tasks.filter(task => {
+    // Viewer can only see tasks assigned to them
+    if (isViewer() && !isAdmin) {
+      const assignedToMe =
+        task.assigneeType === 'all_school' ||
+        (task.assigneeIds || []).includes(uid) ||
+        (task.assigneeType === 'team' && (userData?.teamIds || []).includes(task.assigneeTeamId));
+      if (!assignedToMe) return false;
+    }
     if (filterStatus !== 'all' && task.status !== filterStatus) return false;
     if (filterPriority !== 'all' && task.priority !== filterPriority) return false;
     if (filterTeam !== 'all') {
@@ -332,10 +342,12 @@ export default function TaskBoard() {
       <div className="page-content">
         <div className="page-toolbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-              <Plus size={16} />
-              משימה חדשה
-            </button>
+            {!isViewer() && (
+              <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+                <Plus size={16} />
+                משימה חדשה
+              </button>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <div className="search-bar" style={{ minWidth: 160 }}>
@@ -636,16 +648,20 @@ export default function TaskBoard() {
                 </div>
 
                 <div className="task-status-wrap">
-                  <select
-                    className="task-status-select"
-                    value={task.status}
-                    onChange={e => updateTaskStatus(task.id, e.target.value)}
-                    style={{ color: status.color, borderColor: status.color }}
-                  >
-                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                      <option key={key} value={key}>{cfg.label}</option>
-                    ))}
-                  </select>
+                  {isViewer() ? (
+                    <span className="task-status-badge" style={{ color: status.color, borderColor: status.color }}>{status.label}</span>
+                  ) : (
+                    <select
+                      className="task-status-select"
+                      value={task.status}
+                      onChange={e => updateTaskStatus(task.id, e.target.value)}
+                      style={{ color: status.color, borderColor: status.color }}
+                    >
+                      {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                        <option key={key} value={key}>{cfg.label}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div className="task-actions">
@@ -656,13 +672,15 @@ export default function TaskBoard() {
                   >
                     <Pin size={15} style={isPinned ? { color: '#2563eb' } : undefined} />
                   </button>
-                  <button
-                    className="icon-btn"
-                    title="עריכה"
-                    onClick={() => startEdit(task)}
-                  >
-                    <Edit3 size={15} />
-                  </button>
+                  {!isViewer() && (
+                    <button
+                      className="icon-btn"
+                      title="עריכה"
+                      onClick={() => startEdit(task)}
+                    >
+                      <Edit3 size={15} />
+                    </button>
+                  )}
                   <button
                     className="icon-btn"
                     title="צ'אט"
@@ -670,13 +688,15 @@ export default function TaskBoard() {
                   >
                     <MessageSquare size={15} />
                   </button>
-                  <button
-                    className="icon-btn icon-btn--danger"
-                    title="מחיקה"
-                    onClick={() => deleteTask(task.id)}
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {!isViewer() && (
+                    <button
+                      className="icon-btn icon-btn--danger"
+                      title="מחיקה"
+                      onClick={() => deleteTask(task.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </div>
               </div>
             );
