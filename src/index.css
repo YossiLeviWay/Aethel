@@ -92,6 +92,10 @@ a:hover {
   to { transform: rotate(360deg); }
 }
 
+.spin {
+  animation: spin 0.7s linear infinite;
+}
+
 /* ===== Common Page Layout ===== */
 .page {
   display: flex;

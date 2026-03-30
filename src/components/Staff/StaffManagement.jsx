@@ -20,7 +20,7 @@ import {
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, updateEmail, deleteUser, signOut as firebaseSignOut } from 'firebase/auth';
 import { secondaryAuth } from '../../firebase';
 import Header from '../Layout/Header';
-import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User, MessageCircle, Briefcase, Eye } from 'lucide-react';
+import { Edit3, Trash2, Shield, Search, X, UserPlus, CheckCircle, XCircle, Lock, ChevronDown, ChevronUp, Save, Filter, Phone, Mail, User, MessageCircle, Briefcase, Eye, Key, Copy, RefreshCw } from 'lucide-react';
 import RolesManager from './RolesManager';
 import '../Gantt/Gantt.css';
 import './Staff.css';
@@ -190,6 +190,8 @@ export default function StaffManagement() {
   const [editError, setEditError] = useState('');
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [schoolsToRemove, setSchoolsToRemove] = useState([]);
+  const [generatedPassword, setGeneratedPassword] = useState('');
+  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
 
   const [schools, setSchools] = useState([]);
   const [permissionsUser, setPermissionsUser] = useState(null);
@@ -431,6 +433,47 @@ export default function StaffManagement() {
     setSchoolsToRemove([]);
     setEditError('');
     setPasswordSaved(false);
+    setGeneratedPassword('');
+  }
+
+  function generateRandomPassword() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let password = '';
+    for (let i = 0; i < 10; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  }
+
+  async function handleResetPassword() {
+    if (!editUser) return;
+    setResetPasswordLoading(true);
+    setEditError('');
+    const newPass = generateRandomPassword();
+
+    const currentPassword = editUser._authPassword || editUser._pendingPassword;
+    const updateData = { _authPassword: newPass };
+
+    if (currentPassword && editUser.email) {
+      try {
+        const cred = await signInWithEmailAndPassword(secondaryAuth, editUser.email, currentPassword);
+        await updatePassword(cred.user, newPass);
+        await firebaseSignOut(secondaryAuth);
+      } catch (authErr) {
+        console.warn('Could not update Firebase Auth directly, using pending password:', authErr);
+        updateData._pendingPassword = newPass;
+      }
+    } else {
+      updateData._pendingPassword = newPass;
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', editUser.id), updateData);
+      setGeneratedPassword(newPass);
+    } catch (err) {
+      setEditError('שגיאה באיפוס הסיסמה: ' + err.message);
+    }
+    setResetPasswordLoading(false);
   }
 
   async function openPermissions(user) {
@@ -1131,6 +1174,81 @@ export default function StaffManagement() {
                     <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
                       הסיסמא תיכנס לתוקף בכניסה הבאה של המשתמש למערכת. השאירו ריק אם אין צורך בשינוי.
                     </span>
+                  </div>
+
+                  {/* Admin Reset Password */}
+                  <div className="form-group">
+                    <label>
+                      <Key size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.3rem' }} />
+                      איפוס סיסמה אקראי
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleResetPassword}
+                      disabled={resetPasswordLoading}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: 'fit-content' }}
+                    >
+                      <RefreshCw size={14} className={resetPasswordLoading ? 'spin' : ''} />
+                      {resetPasswordLoading ? 'מאפס...' : 'הנפק סיסמה אקראית'}
+                    </button>
+                    <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                      הסיסמה תיווצר באופן אקראי ותוצג רק לך. העבר/י אותה למשתמש מחוץ למערכת.
+                    </span>
+
+                    {generatedPassword && (
+                      <div style={{
+                        marginTop: '0.5rem',
+                        background: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: 8,
+                        padding: '0.75rem 1rem',
+                      }}>
+                        <div style={{ fontSize: '0.78rem', color: '#16a34a', fontWeight: 600, marginBottom: '0.35rem' }}>
+                          הסיסמה החדשה נוצרה בהצלחה:
+                        </div>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          background: '#fff',
+                          border: '1px solid #d1d5db',
+                          borderRadius: 6,
+                          padding: '0.5rem 0.75rem',
+                        }}>
+                          <code style={{
+                            flex: 1,
+                            fontSize: '1.05rem',
+                            fontWeight: 700,
+                            letterSpacing: '0.05em',
+                            color: '#1e293b',
+                            direction: 'ltr',
+                            userSelect: 'all',
+                          }}>
+                            {generatedPassword}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => { navigator.clipboard.writeText(generatedPassword); }}
+                            style={{
+                              background: 'none',
+                              border: '1px solid #d1d5db',
+                              borderRadius: 4,
+                              cursor: 'pointer',
+                              padding: '0.3rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                            }}
+                            title="העתק סיסמה"
+                          >
+                            <Copy size={14} />
+                          </button>
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#f59e0b', marginTop: '0.35rem', fontWeight: 500 }}>
+                          שימו לב: הסיסמה לא תוצג שוב לאחר סגירת החלון. העתיקו אותה עכשיו.
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {editError && (
