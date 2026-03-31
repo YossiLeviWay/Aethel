@@ -8,6 +8,7 @@ import {
   query,
   where,
   getDocs,
+  getDoc,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -77,6 +78,7 @@ export default function FileManager() {
   const [renamingItem, setRenamingItem] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [viewerContextMenu, setViewerContextMenu] = useState(null);
+  const [folderPerms, setFolderPerms] = useState({});
   const autoSaveTimerRef = useRef(null);
   const lastSavedContentRef = useRef(null);
   const fileEditNotifSentRef = useRef(null); // track which file we already notified about
@@ -86,10 +88,22 @@ export default function FileManager() {
 
   function userCanAccessFolder(folder) {
     if (canManage) return true;
-    if (folder.visibility === 'all') return true;
     if (folder.visibility === 'principal_only') return false;
+    // Check resource_permissions for this folder
+    const perm = folderPerms[folder.id];
+    if (perm && !perm.public) {
+      // Folder has specific permissions set - check user and team access
+      const uid = userData?.uid;
+      const userTeamIds = userData?.teamIds || [];
+      const isInViewers = perm.viewers?.includes(uid) || perm.editors?.includes(uid);
+      const isInTeam = (perm.viewerTeams || []).some(t => userTeamIds.includes(t)) ||
+                       (perm.editorTeams || []).some(t => userTeamIds.includes(t));
+      return isInViewers || isInTeam;
+    }
+    // No specific permissions or public - use legacy checks
+    if (folder.visibility === 'all') return true;
     if (folder.allowedUsers && folder.allowedUsers.includes(userData?.uid)) return true;
-    return folder.visibility === 'all';
+    return false;
   }
 
   function userCanCreateFiles() {
@@ -116,6 +130,23 @@ export default function FileManager() {
     });
   }
 
+  // Load resource permissions for folders
+  useEffect(() => {
+    if (!schoolId) return;
+    const q = query(collection(db, `folders_${schoolId}`));
+    const unsub = onSnapshot(q, async (snap) => {
+      const perms = {};
+      await Promise.all(snap.docs.map(async (d) => {
+        try {
+          const permDoc = await getDoc(doc(db, 'resource_permissions', `folder_${d.id}`));
+          if (permDoc.exists()) perms[d.id] = permDoc.data();
+        } catch {}
+      }));
+      setFolderPerms(perms);
+    });
+    return unsub;
+  }, [schoolId]);
+
   useEffect(() => {
     if (!schoolId) return;
     const q = query(collection(db, `folders_${schoolId}`), orderBy('name'));
@@ -124,7 +155,7 @@ export default function FileManager() {
       setFolders(allFolders.filter(f => userCanAccessFolder(f)));
     });
     return unsub;
-  }, [schoolId, canManage, userData]);
+  }, [schoolId, canManage, userData, folderPerms]);
 
   // Load all files for all folders
   useEffect(() => {
