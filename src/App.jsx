@@ -93,14 +93,14 @@ export default function App() {
           <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="calendar" element={<ApprovedRoute><SchoolRequiredRoute><GanttChart /></SchoolRequiredRoute></ApprovedRoute>} />
-            <Route path="categories" element={<ApprovedRoute><SchoolRequiredRoute><PrincipalRoute><CategoryManager /></PrincipalRoute></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="categories" element={<ApprovedRoute><SchoolRequiredRoute><CategoryManager /></SchoolRequiredRoute></ApprovedRoute>} />
             <Route path="staff" element={<ApprovedRoute><SchoolRequiredRoute><StaffManagement /></SchoolRequiredRoute></ApprovedRoute>} />
-            <Route path="tasks" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><TaskBoard /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
-            <Route path="files" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><FileManager /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
-            <Route path="teams" element={<ApprovedRoute><SchoolRequiredRoute><EditorRoute><Teams /></EditorRoute></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="tasks" element={<ApprovedRoute><SchoolRequiredRoute><TaskBoard /></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="files" element={<ApprovedRoute><SchoolRequiredRoute><FileManager /></SchoolRequiredRoute></ApprovedRoute>} />
+            <Route path="teams" element={<ApprovedRoute><SchoolRequiredRoute><Teams /></SchoolRequiredRoute></ApprovedRoute>} />
             <Route path="messages" element={<ApprovedRoute><Messages /></ApprovedRoute>} />
             <Route path="notifications" element={<ApprovedRoute><Notifications /></ApprovedRoute>} />
-            <Route path="holidays" element={<ApprovedRoute><PrincipalRoute><HolidayManager /></PrincipalRoute></ApprovedRoute>} />
+            <Route path="holidays" element={<ApprovedRoute><SchoolRequiredRoute><HolidayManager /></SchoolRequiredRoute></ApprovedRoute>} />
             <Route path="schools" element={<AdminRoute><SchoolManagement /></AdminRoute>} />
             <Route path="settings" element={<Settings />} />
           </Route>
