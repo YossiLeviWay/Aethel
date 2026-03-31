@@ -45,7 +45,8 @@ import {
   Share2,
   Pencil,
   Info,
-  MoreVertical
+  MoreVertical,
+  Copy
 } from 'lucide-react';
 import { createNotifications } from '../../utils/notifications';
 import '../Gantt/Gantt.css';
@@ -343,6 +344,22 @@ export default function FileManager() {
     if (editingFile?.id === fileItem.id) setEditingFile(null);
   }
 
+  async function duplicateFile(fileItem) {
+    if (!schoolId || isViewer()) return;
+    try {
+      const { id, ...data } = fileItem;
+      await addDoc(collection(db, `files_${schoolId}`), {
+        ...data,
+        name: (data.name || 'קובץ') + ' - עותק',
+        createdAt: new Date().toISOString(),
+        uploadedBy: userData?.fullName || '',
+        pinnedBy: [],
+      });
+    } catch (err) {
+      alert('שגיאה בשכפול: ' + err.message);
+    }
+  }
+
   function openFile(file) {
     if (file.fileType === 'spreadsheet' || file.fileType === 'document') {
       setEditingFile(file);
@@ -620,6 +637,16 @@ export default function FileManager() {
             <div className="tree-panel-header">
               <h3>תיקיות וקבצים</h3>
               <div className="tree-panel-actions">
+                {selectedFolder && userCanCreateFiles() && (
+                  <>
+                    <button className="icon-btn" onClick={() => { setNewFileType('spreadsheet'); setCreateInFolder(selectedFolder); }} title="גיליון חדש">
+                      <Table2 size={15} />
+                    </button>
+                    <button className="icon-btn" onClick={() => { setNewFileType('document'); setCreateInFolder(selectedFolder); }} title="מסמך חדש">
+                      <FileEdit size={15} />
+                    </button>
+                  </>
+                )}
                 {canManage && (
                   <button className="icon-btn" onClick={() => setShowNewFolder(true)} title="תיקייה חדשה">
                     <FolderPlus size={15} />
@@ -942,6 +969,15 @@ export default function FileManager() {
               <Download size={14} />
               הורדה
             </a>
+          )}
+          {contextMenu.type === 'file' && (contextMenu.item.fileType === 'spreadsheet' || contextMenu.item.fileType === 'document') && !isViewer() && (
+            <button className="context-menu-item" onClick={() => {
+              duplicateFile(contextMenu.item);
+              setContextMenu(null);
+            }}>
+              <Copy size={14} />
+              שכפול
+            </button>
           )}
           <div className="context-menu-divider" />
           {canManage && (

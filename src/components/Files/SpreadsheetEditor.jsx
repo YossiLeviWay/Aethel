@@ -777,6 +777,15 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
       } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
         e.preventDefault();
         handleRedo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !editingCell && selection) {
+        e.preventDefault();
+        copySelection();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'x' && !editingCell && selection) {
+        e.preventDefault();
+        cutSelection();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !editingCell && clipboard) {
+        // Let system paste handler handle if there's external data; otherwise use internal clipboard
+        if (clipboard) pasteClipboard();
       }
     }
     document.addEventListener('keydown', handleGlobalKeyDown);
@@ -807,21 +816,34 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     const minC = Math.min(selection.startCol, selection.endCol);
     const maxC = Math.max(selection.startCol, selection.endCol);
     const clipCells = {};
+    const clipStyles = {};
+    const textRows = [];
     for (let r = minR; r <= maxR; r++) {
+      const rowVals = [];
       for (let c = minC; c <= maxC; c++) {
         const ref = getColLetter(c) + (r + 1);
         if (cells[ref]) clipCells[`${r - minR}-${c - minC}`] = { ...cells[ref] };
+        const styleKey = `${r}-${c}`;
+        if (cellStyles[styleKey]) clipStyles[`${r - minR}-${c - minC}`] = { ...cellStyles[styleKey] };
+        const cell = cells[ref];
+        const displayVal = cell?.formula ? evaluateFormula(cell.formula, cells) : (cell?.value || '');
+        rowVals.push(displayVal);
       }
+      textRows.push(rowVals.join('\t'));
     }
-    setClipboard({ cells: clipCells, type: 'cut', startRow: minR, startCol: minC, endRow: maxR, endCol: maxC, rows: maxR - minR + 1, cols: maxC - minC + 1 });
-    // Clear source cells
+    setClipboard({ cells: clipCells, styles: clipStyles, type: 'cut', startRow: minR, startCol: minC, endRow: maxR, endCol: maxC, rows: maxR - minR + 1, cols: maxC - minC + 1 });
+    try { navigator.clipboard.writeText(textRows.join('\n')); } catch {}
+    // Clear source cells and styles
     const newCells = { ...cells };
+    const newStyles = { ...cellStyles };
     for (let r = minR; r <= maxR; r++) {
       for (let c = minC; c <= maxC; c++) {
         delete newCells[getColLetter(c) + (r + 1)];
+        delete newStyles[`${r}-${c}`];
       }
     }
     setCells(newCells);
+    setCellStyles(newStyles);
     triggerSave(newCells, headers, numCols, numRows);
     setCellContextMenu(null);
   }
@@ -833,13 +855,24 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     const minC = Math.min(selection.startCol, selection.endCol);
     const maxC = Math.max(selection.startCol, selection.endCol);
     const clipCells = {};
+    const clipStyles = {};
+    const textRows = [];
     for (let r = minR; r <= maxR; r++) {
+      const rowVals = [];
       for (let c = minC; c <= maxC; c++) {
         const ref = getColLetter(c) + (r + 1);
         if (cells[ref]) clipCells[`${r - minR}-${c - minC}`] = { ...cells[ref] };
+        const styleKey = `${r}-${c}`;
+        if (cellStyles[styleKey]) clipStyles[`${r - minR}-${c - minC}`] = { ...cellStyles[styleKey] };
+        const cell = cells[ref];
+        const displayVal = cell?.formula ? evaluateFormula(cell.formula, cells) : (cell?.value || '');
+        rowVals.push(displayVal);
       }
+      textRows.push(rowVals.join('\t'));
     }
-    setClipboard({ cells: clipCells, type: 'copy', startRow: minR, startCol: minC, endRow: maxR, endCol: maxC, rows: maxR - minR + 1, cols: maxC - minC + 1 });
+    setClipboard({ cells: clipCells, styles: clipStyles, type: 'copy', startRow: minR, startCol: minC, endRow: maxR, endCol: maxC, rows: maxR - minR + 1, cols: maxC - minC + 1 });
+    // Write to system clipboard
+    try { navigator.clipboard.writeText(textRows.join('\n')); } catch {}
     setCellContextMenu(null);
   }
 
@@ -849,19 +882,32 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     if (!ref) return;
     pushUndo();
     const newCells = { ...cells };
+    const newStyles = { ...cellStyles };
+    let newNumRows = numRows;
+    let newNumCols = numCols;
+    const neededRows = ref.row + clipboard.rows;
+    const neededCols = ref.col + clipboard.cols;
+    if (neededRows > newNumRows) newNumRows = neededRows;
+    if (neededCols > newNumCols) newNumCols = neededCols;
     for (let r = 0; r < clipboard.rows; r++) {
       for (let c = 0; c < clipboard.cols; c++) {
         const srcData = clipboard.cells[`${r}-${c}`];
+        const srcStyle = clipboard.styles?.[`${r}-${c}`];
         const targetRef = getColLetter(ref.col + c) + (ref.row + r + 1);
-        if (ref.row + r < numRows && ref.col + c < numCols) {
-          if (srcData) {
-            newCells[targetRef] = { ...srcData };
-          }
+        const targetStyleKey = `${ref.row + r}-${ref.col + c}`;
+        if (srcData) {
+          newCells[targetRef] = { ...srcData };
+        }
+        if (srcStyle) {
+          newStyles[targetStyleKey] = { ...srcStyle };
         }
       }
     }
     setCells(newCells);
-    triggerSave(newCells, headers, numCols, numRows);
+    setCellStyles(newStyles);
+    if (newNumRows !== numRows) setNumRows(newNumRows);
+    if (newNumCols !== numCols) setNumCols(newNumCols);
+    triggerSave(newCells, headers, newNumCols, newNumRows);
     setCellContextMenu(null);
   }
 
@@ -1269,7 +1315,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
       </div>
 
       {/* Spreadsheet Grid */}
-      <div className="spreadsheet-container" dir="rtl" style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top right' }}>
+      <div className="spreadsheet-container" dir="rtl" style={{ zoom: zoomLevel / 100 }}>
         <table className="spreadsheet-table" ref={tableRef} style={{ fontSize: `${fontSize}px` }}>
           <thead>
             <tr>
