@@ -46,7 +46,9 @@ import {
   Pencil,
   Info,
   MoreVertical,
-  Copy
+  Copy,
+  History,
+  Clock
 } from 'lucide-react';
 import { createNotifications } from '../../utils/notifications';
 import '../Gantt/Gantt.css';
@@ -80,6 +82,9 @@ export default function FileManager() {
   const [renameValue, setRenameValue] = useState('');
   const [viewerContextMenu, setViewerContextMenu] = useState(null);
   const [folderPerms, setFolderPerms] = useState({});
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const autoSaveTimerRef = useRef(null);
   const lastSavedContentRef = useRef(null);
   const fileEditNotifSentRef = useRef(null); // track which file we already notified about
@@ -259,15 +264,61 @@ export default function FileManager() {
     }
   }
 
+  function computeSpreadsheetChanges(oldContent, newContent) {
+    try {
+      const oldData = typeof oldContent === 'string' ? JSON.parse(oldContent) : oldContent;
+      const newData = typeof newContent === 'string' ? JSON.parse(newContent) : newContent;
+      if (!oldData || !newData) return [];
+      const changes = [];
+      const oldCells = oldData.cells || {};
+      const newCells = newData.cells || {};
+      const allRefs = new Set([...Object.keys(oldCells), ...Object.keys(newCells)]);
+      for (const ref of allRefs) {
+        const oldVal = oldCells[ref]?.value || '';
+        const newVal = newCells[ref]?.value || '';
+        const oldFormula = oldCells[ref]?.formula || '';
+        const newFormula = newCells[ref]?.formula || '';
+        if (oldVal !== newVal || oldFormula !== newFormula) {
+          changes.push({ cell: ref, oldValue: oldFormula || oldVal, newValue: newFormula || newVal });
+        }
+      }
+      return changes.slice(0, 50); // limit to 50 changes per save
+    } catch { return []; }
+  }
+
   async function saveFileContent(content) {
     if (!editingFile || !schoolId) return;
     setFileSaving(true);
+    const prevContent = lastSavedContentRef.current;
     try {
+      const now = new Date().toISOString();
       await updateDoc(doc(db, `files_${schoolId}`, editingFile.id), {
         content,
-        lastModified: new Date().toISOString(),
+        lastModified: now,
         lastModifiedBy: userData?.fullName || ''
       });
+
+      // Write edit history entry
+      try {
+        const historyEntry = {
+          fileId: editingFile.id,
+          fileName: editingFile.name,
+          fileType: editingFile.fileType,
+          userId: uid,
+          userName: userData?.fullName || '',
+          timestamp: now,
+        };
+        if (editingFile.fileType === 'spreadsheet') {
+          historyEntry.changes = computeSpreadsheetChanges(prevContent, content);
+        } else {
+          historyEntry.summary = 'עריכת מסמך';
+        }
+        // Only write if there are actual changes
+        if (editingFile.fileType !== 'spreadsheet' || historyEntry.changes.length > 0) {
+          await addDoc(collection(db, `file_history_${schoolId}`), historyEntry);
+        }
+      } catch {}
+
       lastSavedContentRef.current = content;
       setEditingFile(prev => ({ ...prev, content }));
       // Notify team members about file edit (once per file session)
@@ -362,10 +413,51 @@ export default function FileManager() {
 
   function openFile(file) {
     if (file.fileType === 'spreadsheet' || file.fileType === 'document') {
+      // Flush pending autosave for current file before switching
+      if (editingFile && editingFile.id !== file.id && autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+        if (editingFile.content !== lastSavedContentRef.current) {
+          saveFileContent(editingFile.content);
+        }
+      }
       setEditingFile(file);
     } else if (file.url) {
       window.open(file.url, '_blank');
     }
+  }
+
+  async function loadHistory(fileId) {
+    if (!schoolId || !fileId) return;
+    setHistoryLoading(true);
+    try {
+      const q = query(
+        collection(db, `file_history_${schoolId}`),
+        where('fileId', '==', fileId),
+        orderBy('timestamp', 'desc')
+      );
+      const snap = await getDocs(q);
+      setHistoryEntries(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch {
+      setHistoryEntries([]);
+    }
+    setHistoryLoading(false);
+  }
+
+  function toggleHistory() {
+    if (showHistory) {
+      setShowHistory(false);
+    } else {
+      setShowHistory(true);
+      if (editingFile) loadHistory(editingFile.id);
+    }
+  }
+
+  function formatHistoryTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' +
+      d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
   }
 
   function formatSize(bytes) {
@@ -783,11 +875,20 @@ export default function FileManager() {
                       </>
                     )}
                     {isViewer() && <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>צפייה בלבד</span>}
+                    <button
+                      className={`icon-btn ${showHistory ? 'icon-btn--active' : ''}`}
+                      onClick={toggleHistory}
+                      title="היסטוריית עריכה"
+                    >
+                      <History size={15} />
+                    </button>
                   </div>
                 </div>
+                <div className="file-editor-body-wrap">
                 <div className="file-editor-body">
                   {editingFile.fileType === 'spreadsheet' ? (
                     <SpreadsheetEditor
+                      key={editingFile.id}
                       data={typeof editingFile.content === 'string' ? JSON.parse(editingFile.content) : editingFile.content}
                       onChange={isViewer() ? undefined : (newData) => {
                         const json = JSON.stringify(newData);
@@ -800,6 +901,7 @@ export default function FileManager() {
                     />
                   ) : (
                     <DocumentEditor
+                      key={editingFile.id}
                       content={editingFile.content || ''}
                       onChange={isViewer() ? undefined : (newContent) => {
                         setEditingFile(prev => ({ ...prev, content: newContent }));
@@ -808,6 +910,56 @@ export default function FileManager() {
                       readOnly={isViewer()}
                     />
                   )}
+                </div>
+                {/* Edit History Panel */}
+                {showHistory && (
+                  <div className="file-history-panel">
+                    <div className="file-history-header">
+                      <History size={14} />
+                      <span>היסטוריית עריכה</span>
+                      <button className="icon-btn" onClick={() => setShowHistory(false)} style={{ marginRight: 'auto' }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div className="file-history-list">
+                      {historyLoading ? (
+                        <div className="file-history-empty">טוען...</div>
+                      ) : historyEntries.length === 0 ? (
+                        <div className="file-history-empty">אין היסטוריית עריכה</div>
+                      ) : historyEntries.map(entry => (
+                        <div key={entry.id} className="file-history-entry">
+                          <div className="file-history-entry-header">
+                            <span className="file-history-user">{entry.userName || 'משתמש'}</span>
+                            <span className="file-history-time">
+                              <Clock size={11} />
+                              {formatHistoryTime(entry.timestamp)}
+                            </span>
+                          </div>
+                          {entry.fileType === 'spreadsheet' && entry.changes?.length > 0 ? (
+                            <div className="file-history-changes">
+                              {entry.changes.map((ch, i) => (
+                                <div key={i} className="file-history-change">
+                                  <span className="file-history-cell">{ch.cell}</span>
+                                  {ch.oldValue ? (
+                                    <>
+                                      <span className="file-history-old">{ch.oldValue}</span>
+                                      <span className="file-history-arrow">←</span>
+                                      <span className="file-history-new">{ch.newValue}</span>
+                                    </>
+                                  ) : (
+                                    <span className="file-history-new">{ch.newValue}</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="file-history-summary">{entry.summary || 'עריכה'}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 </div>
               </div>
             ) : selectedFolder ? (
