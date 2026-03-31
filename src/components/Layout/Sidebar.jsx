@@ -40,13 +40,13 @@ import './Layout.css';
 const NAV_ITEMS = [
   { path: '/', icon: Home, label: 'דשבורד', all: true },
   { path: '/calendar', icon: Calendar, label: 'לוח שנה', requiresSchool: true, viewerAllowed: true },
-  { path: '/categories', icon: LayoutGrid, label: 'קטגוריות', roles: ['global_admin', 'principal'], requiresSchool: true },
+  { path: '/categories', icon: LayoutGrid, label: 'קטגוריות', requiresSchool: true, viewerAllowed: true },
   { path: '/staff', icon: Users, label: 'סגל וקהילה', requiresSchool: true, viewerAllowed: true },
-  { path: '/tasks', icon: CheckSquare, label: 'משימות', requiresSchool: true, minRole: 'editor' },
-  { path: '/files', icon: FolderOpen, label: 'קבצים', requiresSchool: true, minRole: 'editor' },
-  { path: '/teams', icon: Users, label: 'צוותים', requiresSchool: true, minRole: 'editor' },
+  { path: '/tasks', icon: CheckSquare, label: 'משימות', requiresSchool: true, viewerAllowed: true },
+  { path: '/files', icon: FolderOpen, label: 'קבצים', requiresSchool: true, viewerAllowed: true },
+  { path: '/teams', icon: Users, label: 'צוותים', requiresSchool: true, viewerAllowed: true },
   { path: '/messages', icon: MessageCircle, label: 'הודעות', all: true },
-  { path: '/holidays', icon: Sun, label: 'חופשות וחגים', roles: ['global_admin', 'principal'] },
+  { path: '/holidays', icon: Sun, label: 'חופשות וחגים', requiresSchool: true, viewerAllowed: true },
   { path: '/schools', icon: School, label: 'ניהול מוסדות', roles: ['global_admin'] },
   { path: '/settings', icon: Settings, label: 'הגדרות', all: true }
 ];
