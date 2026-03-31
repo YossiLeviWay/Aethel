@@ -128,8 +128,22 @@
   border: 1px solid #d1d5db;
 }
 
+.ribbon-btn--labeled {
+  flex-direction: column;
+  gap: 0px;
+  padding: 0.2rem 0.35rem 0.15rem;
+  min-width: 32px;
+}
+
 .ribbon-label {
-  font-size: 0.65rem;
+  font-size: 0.58rem;
+  line-height: 1;
+  color: #64748b;
+  letter-spacing: -0.02em;
+}
+
+.ribbon-btn--active .ribbon-label {
+  color: #2563eb;
 }
 
 .ribbon-font-size {

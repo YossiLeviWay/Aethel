@@ -1159,8 +1159,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
           <div className="ribbon-row">
             {/* Undo/Redo group */}
             <div className="ribbon-group">
-              <button className="ribbon-btn" onClick={handleUndo} disabled={undoStack.length === 0} title="ביטול (Ctrl+Z)"><Undo2 size={14} /></button>
-              <button className="ribbon-btn" onClick={handleRedo} disabled={redoStack.length === 0} title="חזרה (Ctrl+Y)"><Redo2 size={14} /></button>
+              <button className="ribbon-btn ribbon-btn--labeled" onClick={handleUndo} disabled={undoStack.length === 0} title="ביטול (Ctrl+Z)"><Undo2 size={14} /><span className="ribbon-label">בטל</span></button>
+              <button className="ribbon-btn ribbon-btn--labeled" onClick={handleRedo} disabled={redoStack.length === 0} title="חזרה (Ctrl+Y)"><Redo2 size={14} /><span className="ribbon-label">חזור</span></button>
             </div>
             <div className="ribbon-separator" />
 
@@ -1171,18 +1171,19 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                 <span className="ribbon-font-label">{curStyle.fontSize || fontSize}</span>
                 <button className="ribbon-btn ribbon-btn--sm" onClick={() => { const s = (curStyle.fontSize || fontSize) + 1; if (s <= 36) applyFontSize(s); }} title="הגדל גופן"><Plus size={10} /></button>
               </div>
-              <button className={`ribbon-btn${curStyle.bold ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('bold', 'toggle')} title="מודגש (B)"><Bold size={14} /></button>
-              <button className={`ribbon-btn${curStyle.italic ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('italic', 'toggle')} title="נטוי (I)"><Italic size={14} /></button>
-              <button className={`ribbon-btn${curStyle.underline ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('underline', 'toggle')} title="קו תחתון (U)"><Underline size={14} /></button>
-              <button className={`ribbon-btn${curStyle.strikethrough ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('strikethrough', 'toggle')} title="קו חוצה"><Strikethrough size={14} /></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.bold ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('bold', 'toggle')} title="מודגש (B)"><Bold size={14} /><span className="ribbon-label">מודגש</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.italic ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('italic', 'toggle')} title="נטוי (I)"><Italic size={14} /><span className="ribbon-label">נטוי</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.underline ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('underline', 'toggle')} title="קו תחתון (U)"><Underline size={14} /><span className="ribbon-label">קו תחתון</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.strikethrough ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('strikethrough', 'toggle')} title="קו חוצה"><Strikethrough size={14} /><span className="ribbon-label">חוצה</span></button>
             </div>
             <div className="ribbon-separator" />
 
             {/* Colors group */}
             <div className="ribbon-group">
               <div style={{ position: 'relative' }}>
-                <button className="ribbon-btn ribbon-btn--color" onClick={() => { setShowCellColorPicker(!showCellColorPicker); setShowCalcMenu(false); setShowTextColorPicker(false); }} title="צבע רקע">
+                <button className="ribbon-btn ribbon-btn--color ribbon-btn--labeled" onClick={() => { setShowCellColorPicker(!showCellColorPicker); setShowCalcMenu(false); setShowTextColorPicker(false); }} title="צבע רקע">
                   <Paintbrush size={14} />
+                  <span className="ribbon-label">רקע</span>
                   <span className="ribbon-color-indicator" style={{ background: curStyle.bg || '#fff' }} />
                 </button>
                 {showCellColorPicker && (
@@ -1194,8 +1195,9 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                 )}
               </div>
               <div style={{ position: 'relative' }}>
-                <button className="ribbon-btn ribbon-btn--color" onClick={() => { setShowTextColorPicker(!showTextColorPicker); setShowCalcMenu(false); setShowCellColorPicker(false); }} title="צבע טקסט">
+                <button className="ribbon-btn ribbon-btn--color ribbon-btn--labeled" onClick={() => { setShowTextColorPicker(!showTextColorPicker); setShowCalcMenu(false); setShowCellColorPicker(false); }} title="צבע טקסט">
                   <Type size={14} />
+                  <span className="ribbon-label">טקסט</span>
                   <span className="ribbon-color-indicator" style={{ background: curStyle.color || '#1e293b' }} />
                 </button>
                 {showTextColorPicker && (
@@ -1211,15 +1213,15 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
             {/* Alignment group */}
             <div className="ribbon-group">
-              <button className={`ribbon-btn${curStyle.textAlign === 'right' || !curStyle.textAlign ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'right')} title="ימין"><AlignRight size={14} /></button>
-              <button className={`ribbon-btn${curStyle.textAlign === 'center' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'center')} title="מרכז"><AlignCenter size={14} /></button>
-              <button className={`ribbon-btn${curStyle.textAlign === 'left' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'left')} title="שמאל"><AlignLeft size={14} /></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.textAlign === 'right' || !curStyle.textAlign ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'right')} title="ימין"><AlignRight size={14} /><span className="ribbon-label">ימין</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.textAlign === 'center' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'center')} title="מרכז"><AlignCenter size={14} /><span className="ribbon-label">מרכז</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.textAlign === 'left' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'left')} title="שמאל"><AlignLeft size={14} /><span className="ribbon-label">שמאל</span></button>
               <div className="ribbon-group-break" />
-              <button className={`ribbon-btn${!curStyle.verticalAlign || curStyle.verticalAlign === 'middle' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'middle')} title="אמצע אנכי"><AlignVerticalJustifyCenter size={14} /></button>
-              <button className={`ribbon-btn${curStyle.verticalAlign === 'top' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'top')} title="למעלה"><AlignVerticalJustifyStart size={14} /></button>
-              <button className={`ribbon-btn${curStyle.verticalAlign === 'bottom' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'bottom')} title="למטה"><AlignVerticalJustifyEnd size={14} /></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${!curStyle.verticalAlign || curStyle.verticalAlign === 'middle' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'middle')} title="אמצע אנכי"><AlignVerticalJustifyCenter size={14} /><span className="ribbon-label">אמצע</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.verticalAlign === 'top' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'top')} title="למעלה"><AlignVerticalJustifyStart size={14} /><span className="ribbon-label">למעלה</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.verticalAlign === 'bottom' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'bottom')} title="למטה"><AlignVerticalJustifyEnd size={14} /><span className="ribbon-label">למטה</span></button>
               <div className="ribbon-group-break" />
-              <button className={`ribbon-btn${curStyle.wrapText ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('wrapText', 'toggle')} title="גלישת טקסט"><WrapText size={14} /></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.wrapText ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('wrapText', 'toggle')} title="גלישת טקסט"><WrapText size={14} /><span className="ribbon-label">גלישה</span></button>
             </div>
             <div className="ribbon-separator" />
 
@@ -1234,12 +1236,12 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
             {/* Merge & Freeze group */}
             <div className="ribbon-group">
-              <button className="ribbon-btn" onClick={handleMergeCells} disabled={!selection} title="מזג/בטל מיזוג"><Merge size={14} /></button>
-              <button className={`ribbon-btn${freezeRow ? ' ribbon-btn--active' : ''}`} onClick={toggleFreezeRow} disabled={!selection} title={freezeRow ? 'שחרר שורות' : 'הקפא שורות'}>
-                {freezeRow ? <Unlock size={14} /> : <Lock size={14} />}
+              <button className="ribbon-btn ribbon-btn--labeled" onClick={handleMergeCells} disabled={!selection} title="מזג/בטל מיזוג"><Merge size={14} /><span className="ribbon-label">מזג</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${freezeRow ? ' ribbon-btn--active' : ''}`} onClick={toggleFreezeRow} disabled={!selection} title={freezeRow ? 'שחרר שורות' : 'הקפא שורות'}>
+                {freezeRow ? <Unlock size={14} /> : <Lock size={14} />}<span className="ribbon-label">{freezeRow ? 'שחרר ש' : 'הקפא ש'}</span>
               </button>
-              <button className={`ribbon-btn${freezeCol ? ' ribbon-btn--active' : ''}`} onClick={toggleFreezeCol} disabled={!selection} title={freezeCol ? 'שחרר עמודות' : 'הקפא עמודות'}>
-                {freezeCol ? <Unlock size={14} /> : <Lock size={14} />}
+              <button className={`ribbon-btn ribbon-btn--labeled${freezeCol ? ' ribbon-btn--active' : ''}`} onClick={toggleFreezeCol} disabled={!selection} title={freezeCol ? 'שחרר עמודות' : 'הקפא עמודות'}>
+                {freezeCol ? <Unlock size={14} /> : <Lock size={14} />}<span className="ribbon-label">{freezeCol ? 'שחרר ע' : 'הקפא ע'}</span>
               </button>
             </div>
             <div className="ribbon-separator" />
@@ -1247,8 +1249,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
             {/* Calc group */}
             <div className="ribbon-group">
               <div style={{ position: 'relative' }}>
-                <button className="ribbon-btn" onClick={() => { setShowCalcMenu(!showCalcMenu); setShowCellColorPicker(false); setShowTextColorPicker(false); }} title="חישובים">
-                  <Calculator size={14} />
+                <button className="ribbon-btn ribbon-btn--labeled" onClick={() => { setShowCalcMenu(!showCalcMenu); setShowCellColorPicker(false); setShowTextColorPicker(false); }} title="חישובים">
+                  <Calculator size={14} /><span className="ribbon-label">חישוב</span>
                 </button>
                 {showCalcMenu && (
                   <div className="calc-menu">

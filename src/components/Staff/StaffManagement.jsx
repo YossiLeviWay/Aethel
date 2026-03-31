@@ -675,6 +675,33 @@ export default function StaffManagement() {
       .filter(Boolean);
   }
 
+  const canManage = canEdit; // isPrincipal() || isAdmin
+
+  function isUserOnline(user) {
+    if (!user.lastSeen) return false;
+    if (user.isOnline) {
+      // Consider online if lastSeen within last 3 minutes
+      const diff = Date.now() - new Date(user.lastSeen).getTime();
+      return diff < 180000;
+    }
+    return false;
+  }
+
+  function getLastSeenText(user) {
+    if (!user.lastSeen) return 'לא התחבר/ה מעולם';
+    if (isUserOnline(user)) return 'מחובר/ת כעת';
+    const d = new Date(user.lastSeen);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 60) return `נראה/ת לפני ${diffMin} דק׳`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `נראה/ת לפני ${diffHours} שע׳`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `נראה/ת לפני ${diffDays} ימים`;
+    return `נראה/ת ב-${d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })}`;
+  }
+
   // Can the logged-in user edit this staff member?
   function canEditUser(user) {
     if (isAdmin) return true;
@@ -980,9 +1007,15 @@ export default function StaffManagement() {
               const schoolNames = getUserSchoolNames(user);
               return (
                 <div key={user.id} className="staff-card" onContextMenu={e => handleContextMenu(e, user)}>
-                  <div className="staff-card-avatar">{user.fullName?.charAt(0) || '?'}</div>
+                  <div className="staff-card-avatar-wrap">
+                    <div className="staff-card-avatar">{user.fullName?.charAt(0) || '?'}</div>
+                    <span className={`staff-online-dot ${isUserOnline(user) ? 'staff-online-dot--online' : ''}`} title={getLastSeenText(user)} />
+                  </div>
                   <h4 className="staff-card-name">{user.fullName}</h4>
                   <p className="staff-card-title">{user.jobTitle || '—'}</p>
+                  {canManage && (
+                    <p className="staff-card-lastseen">{getLastSeenText(user)}</p>
+                  )}
                   <span className={`role-badge role-${user.role}`}>{ROLE_LABELS[user.role] || 'צופה'}</span>
                   {/* Custom roles */}
                   {user.customRoleIds && user.customRoleIds.length > 0 && (

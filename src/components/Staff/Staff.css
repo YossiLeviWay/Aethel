@@ -53,6 +53,12 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
+.staff-card-avatar-wrap {
+  position: relative;
+  display: inline-block;
+  margin: 0 auto 0.75rem;
+}
+
 .staff-card-avatar {
   width: 48px;
   height: 48px;
@@ -64,7 +70,27 @@
   justify-content: center;
   font-weight: 700;
   font-size: 1.1rem;
-  margin: 0 auto 0.75rem;
+}
+
+.staff-online-dot {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  border: 2px solid #fff;
+}
+
+.staff-online-dot--online {
+  background: #22c55e;
+}
+
+.staff-card-lastseen {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  margin: 0.15rem 0 0;
 }
 
 .staff-card-name {

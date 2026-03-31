@@ -422,6 +422,10 @@ export default function FileManager() {
         }
       }
       setEditingFile(file);
+      lastSavedContentRef.current = file.content;
+      fileEditNotifSentRef.current = null;
+      // Reload history if panel is open
+      if (showHistory) loadHistory(file.id);
     } else if (file.url) {
       window.open(file.url, '_blank');
     }
