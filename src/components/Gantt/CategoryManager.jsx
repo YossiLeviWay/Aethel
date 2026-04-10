@@ -21,7 +21,8 @@ const CATEGORY_COLORS = [
 ];
 
 export default function CategoryManager() {
-  const { userData, selectedSchool } = useAuth();
+  const { userData, selectedSchool, isPrincipal, isGlobalAdmin } = useAuth();
+  const canEdit = isPrincipal() || isGlobalAdmin();
   const [categories, setCategories] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -75,10 +76,12 @@ export default function CategoryManager() {
       <Header title="ניהול קטגוריות" />
       <div className="page-content">
         <div className="page-toolbar">
-          <button className="btn btn-primary" onClick={() => { setShowForm(true); setEditing(null); setForm({ name: '', color: CATEGORY_COLORS[0] }); }}>
-            <Plus size={16} />
-            קטגוריה חדשה
-          </button>
+          {canEdit && (
+            <button className="btn btn-primary" onClick={() => { setShowForm(true); setEditing(null); setForm({ name: '', color: CATEGORY_COLORS[0] }); }}>
+              <Plus size={16} />
+              קטגוריה חדשה
+            </button>
+          )}
         </div>
 
         {showForm && (
@@ -125,14 +128,16 @@ export default function CategoryManager() {
             <div key={cat.id} className="category-card" style={{ borderColor: cat.color }}>
               <div className="category-color" style={{ background: cat.color }} />
               <span className="category-name">{cat.name}</span>
-              <div className="category-actions">
-                <button className="icon-btn" onClick={() => startEdit(cat)} title="עריכה">
-                  <Edit3 size={14} />
-                </button>
-                <button className="icon-btn icon-btn--danger" onClick={() => handleDelete(cat.id)} title="מחיקה">
-                  <Trash2 size={14} />
-                </button>
-              </div>
+              {canEdit && (
+                <div className="category-actions">
+                  <button className="icon-btn" onClick={() => startEdit(cat)} title="עריכה">
+                    <Edit3 size={14} />
+                  </button>
+                  <button className="icon-btn icon-btn--danger" onClick={() => handleDelete(cat.id)} title="מחיקה">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
           {categories.length === 0 && (

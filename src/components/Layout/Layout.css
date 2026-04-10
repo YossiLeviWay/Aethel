@@ -703,16 +703,33 @@
   }
 
   .app-header {
-    padding: 0.75rem 1rem;
+    padding: 0.6rem 0.75rem;
+    gap: 0.5rem;
   }
 
   .header-title {
-    font-size: 0.95rem;
+    font-size: 0.88rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .header-left {
+    gap: 0.5rem;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .header-right {
+    gap: 0.5rem;
   }
 
   .context-switcher-btn {
     font-size: 0.72rem;
-    padding: 0.35rem 0.6rem;
+    padding: 0.3rem 0.5rem;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .context-dropdown {
@@ -730,11 +747,34 @@
     height: 30px;
     font-size: 0.75rem;
   }
+
+  .header-notif-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .header-notif-popup {
+    position: fixed;
+    top: 52px;
+    left: 0.5rem;
+    right: 0.5rem;
+    min-width: unset;
+    width: auto;
+  }
+
+  .notif-popup {
+    position: fixed;
+    top: auto;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: auto;
+    width: auto;
+  }
 }
 
 @media (max-width: 480px) {
   .sidebar {
-    width: 200px;
+    width: 220px;
   }
 
   .sidebar-logo {
@@ -747,11 +787,21 @@
   }
 
   .app-header {
-    padding: 0.5rem 0.75rem;
-    min-height: 44px;
+    padding: 0.5rem 0.5rem;
+    min-height: 42px;
   }
 
-  .notif-popup {
-    width: 260px;
+  .header-title {
+    font-size: 0.82rem;
+  }
+
+  .context-switcher-btn {
+    font-size: 0.68rem;
+    padding: 0.25rem 0.4rem;
+    max-width: 100px;
+  }
+
+  .context-dropdown {
+    min-width: 160px;
   }
 }

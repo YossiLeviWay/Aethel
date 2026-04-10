@@ -23,6 +23,7 @@ import '../Gantt/Gantt.css';
 import './Tasks.css';
 import SpreadsheetEditor from '../Files/SpreadsheetEditor';
 import DocumentEditor from '../Files/DocumentEditor';
+import { createNotification, createNotifications } from '../../utils/notifications';
 
 const PRIORITY_CONFIG = {
   high: { label: 'גבוהה', icon: AlertCircle, color: '#ef4444', bg: '#fef2f2' },
@@ -43,7 +44,7 @@ const ASSIGNEE_TYPES = {
 };
 
 export default function TaskBoard() {
-  const { userData, selectedSchool, currentUser } = useAuth();
+  const { userData, selectedSchool, currentUser, isViewer, isPrincipal, isGlobalAdmin } = useAuth();
   const uid = currentUser?.uid;
   const [tasks, setTasks] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -57,6 +58,7 @@ export default function TaskBoard() {
   const [editingTask, setEditingTask] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [allFiles, setAllFiles] = useState([]);
+  const [allFolders, setAllFolders] = useState([]);
   const [previewFile, setPreviewFile] = useState(null);
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -123,6 +125,25 @@ export default function TaskBoard() {
     return unsub;
   }, [schoolId]);
 
+  // Load folders for file path display
+  useEffect(() => {
+    if (!schoolId) return;
+    const unsub = onSnapshot(collection(db, `folders_${schoolId}`), (snap) => {
+      setAllFolders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => setAllFolders([]));
+    return unsub;
+  }, [schoolId]);
+
+  function getFolderName(folderId) {
+    const folder = allFolders.find(f => f.id === folderId);
+    return folder?.name || '';
+  }
+
+  function autoResizeTextarea(e) {
+    e.target.style.height = 'auto';
+    e.target.style.height = e.target.scrollHeight + 'px';
+  }
+
   function handleFileAttach(e) {
     const fileId = e.target.value;
     const file = allFiles.find(f => f.id === fileId);
@@ -181,6 +202,25 @@ export default function TaskBoard() {
     };
 
     await addDoc(collection(db, `tasks_${schoolId}`), taskData);
+
+    // Send notifications to assignees
+    const notifTitle = `משימה חדשה: ${form.title}`;
+    const notifOpts = { title: notifTitle, body: form.description?.slice(0, 80) || '', type: 'task', link: '/tasks' };
+    if (form.assigneeType === 'individual' && form.assigneeIds.length > 0) {
+      const otherIds = form.assigneeIds.filter(id => id !== currentUser?.uid);
+      if (otherIds.length > 0) createNotifications(otherIds, notifOpts);
+    } else if (form.assigneeType === 'team' && form.assigneeTeamId) {
+      const team = teams.find(t => t.id === form.assigneeTeamId);
+      if (team?.memberIds) {
+        const otherIds = team.memberIds.filter(id => id !== currentUser?.uid);
+        if (otherIds.length > 0) createNotifications(otherIds, notifOpts);
+      }
+    } else if (form.assigneeType === 'all_school') {
+      // For all_school, notify staff (skip creator)
+      const otherIds = staff.map(u => u.uid || u.id).filter(id => id !== currentUser?.uid);
+      if (otherIds.length > 0) createNotifications(otherIds, notifOpts);
+    }
+
     setForm({ title: '', description: '', priority: 'medium', status: 'todo', dueDate: '', assigneeType: 'all_school', assigneeIds: [], assigneeTeamId: '', attachedFileId: '', attachedFileName: '' });
     setShowForm(false);
   }
@@ -263,8 +303,18 @@ export default function TaskBoard() {
     return '';
   }
 
+  const isAdmin = isPrincipal() || isGlobalAdmin();
+
   // Filter tasks
   const filteredTasks = tasks.filter(task => {
+    // Viewer can only see tasks assigned to them
+    if (isViewer() && !isAdmin) {
+      const assignedToMe =
+        task.assigneeType === 'all_school' ||
+        (task.assigneeIds || []).includes(uid) ||
+        (task.assigneeType === 'team' && (userData?.teamIds || []).includes(task.assigneeTeamId));
+      if (!assignedToMe) return false;
+    }
     if (filterStatus !== 'all' && task.status !== filterStatus) return false;
     if (filterPriority !== 'all' && task.priority !== filterPriority) return false;
     if (filterTeam !== 'all') {
@@ -292,10 +342,12 @@ export default function TaskBoard() {
       <div className="page-content">
         <div className="page-toolbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-              <Plus size={16} />
-              משימה חדשה
-            </button>
+            {!isViewer() && (
+              <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+                <Plus size={16} />
+                משימה חדשה
+              </button>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <div className="search-bar" style={{ minWidth: 160 }}>
@@ -353,7 +405,7 @@ export default function TaskBoard() {
               </div>
               <div className="form-group">
                 <label>תיאור</label>
-                <textarea name="description" value={form.description} onChange={handleChange} placeholder="פירוט..." rows={2} />
+                <textarea name="description" value={form.description} onChange={(e) => { handleChange(e); autoResizeTextarea(e); }} onFocus={autoResizeTextarea} placeholder="פירוט..." rows={2} style={{ resize: 'none', overflow: 'hidden' }} />
               </div>
               <div className="form-row">
                 <div className="form-group">
@@ -419,9 +471,12 @@ export default function TaskBoard() {
                 <label><Paperclip size={12} style={{ verticalAlign: 'middle' }} /> צירוף קובץ</label>
                 <select value={form.attachedFileId} onChange={handleFileAttach}>
                   <option value="">ללא קובץ מצורף</option>
-                  {allFiles.filter(f => f.fileType === 'spreadsheet' || f.fileType === 'document').map(f => (
-                    <option key={f.id} value={f.id}>{f.name} ({f.fileType === 'spreadsheet' ? 'גיליון' : 'מסמך'})</option>
-                  ))}
+                  {allFiles.filter(f => f.fileType === 'spreadsheet' || f.fileType === 'document').map(f => {
+                    const folderName = getFolderName(f.folderId);
+                    return (
+                      <option key={f.id} value={f.id}>{folderName ? `${folderName} / ` : ''}{f.name} ({f.fileType === 'spreadsheet' ? 'גיליון' : 'מסמך'})</option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -448,7 +503,7 @@ export default function TaskBoard() {
                 </div>
                 <div className="form-group">
                   <label>תיאור</label>
-                  <textarea name="description" value={editForm.description} onChange={handleEditChange} rows={2} />
+                  <textarea name="description" value={editForm.description} onChange={(e) => { handleEditChange(e); autoResizeTextarea(e); }} onFocus={autoResizeTextarea} rows={2} style={{ resize: 'none', overflow: 'hidden' }} />
                 </div>
                 <div className="form-row">
                   <div className="form-group">
@@ -522,9 +577,12 @@ export default function TaskBoard() {
                   <label><Paperclip size={12} style={{ verticalAlign: 'middle' }} /> צירוף קובץ</label>
                   <select value={editForm.attachedFileId || ''} onChange={handleEditFileAttach}>
                     <option value="">ללא קובץ מצורף</option>
-                    {allFiles.filter(f => f.fileType === 'spreadsheet' || f.fileType === 'document').map(f => (
-                      <option key={f.id} value={f.id}>{f.name} ({f.fileType === 'spreadsheet' ? 'גיליון' : 'מסמך'})</option>
-                    ))}
+                    {allFiles.filter(f => f.fileType === 'spreadsheet' || f.fileType === 'document').map(f => {
+                      const folderName = getFolderName(f.folderId);
+                      return (
+                        <option key={f.id} value={f.id}>{folderName ? `${folderName} / ` : ''}{f.name} ({f.fileType === 'spreadsheet' ? 'גיליון' : 'מסמך'})</option>
+                      );
+                    })}
                   </select>
                 </div>
 
@@ -590,16 +648,20 @@ export default function TaskBoard() {
                 </div>
 
                 <div className="task-status-wrap">
-                  <select
-                    className="task-status-select"
-                    value={task.status}
-                    onChange={e => updateTaskStatus(task.id, e.target.value)}
-                    style={{ color: status.color, borderColor: status.color }}
-                  >
-                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                      <option key={key} value={key}>{cfg.label}</option>
-                    ))}
-                  </select>
+                  {isViewer() ? (
+                    <span className="task-status-badge" style={{ color: status.color, borderColor: status.color }}>{status.label}</span>
+                  ) : (
+                    <select
+                      className="task-status-select"
+                      value={task.status}
+                      onChange={e => updateTaskStatus(task.id, e.target.value)}
+                      style={{ color: status.color, borderColor: status.color }}
+                    >
+                      {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                        <option key={key} value={key}>{cfg.label}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div className="task-actions">
@@ -610,13 +672,15 @@ export default function TaskBoard() {
                   >
                     <Pin size={15} style={isPinned ? { color: '#2563eb' } : undefined} />
                   </button>
-                  <button
-                    className="icon-btn"
-                    title="עריכה"
-                    onClick={() => startEdit(task)}
-                  >
-                    <Edit3 size={15} />
-                  </button>
+                  {!isViewer() && (
+                    <button
+                      className="icon-btn"
+                      title="עריכה"
+                      onClick={() => startEdit(task)}
+                    >
+                      <Edit3 size={15} />
+                    </button>
+                  )}
                   <button
                     className="icon-btn"
                     title="צ'אט"
@@ -624,13 +688,15 @@ export default function TaskBoard() {
                   >
                     <MessageSquare size={15} />
                   </button>
-                  <button
-                    className="icon-btn icon-btn--danger"
-                    title="מחיקה"
-                    onClick={() => deleteTask(task.id)}
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {!isViewer() && (
+                    <button
+                      className="icon-btn icon-btn--danger"
+                      title="מחיקה"
+                      onClick={() => deleteTask(task.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -654,6 +720,29 @@ export default function TaskBoard() {
       {previewFile && previewFile.attachedFileId && (() => {
         const file = allFiles.find(f => f.id === previewFile.attachedFileId);
         if (!file) return null;
+        // Check folder permissions
+        const folder = allFolders.find(fd => fd.id === file.folderId);
+        const canManage = userData?.role === 'global_admin' || userData?.role === 'principal';
+        const hasAccess = canManage || !folder || folder.visibility === 'all' ||
+          (folder.allowedUsers && folder.allowedUsers.includes(currentUser?.uid));
+        if (!hasAccess) {
+          return (
+            <div className="task-edit-overlay" onClick={() => setPreviewFile(null)} style={{ zIndex: 250 }}>
+              <div className="task-file-preview-modal" onClick={e => e.stopPropagation()} style={{
+                background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+                width: '90%', maxWidth: 500, padding: '2rem', textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🔒</div>
+                <h3 style={{ margin: '0 0 0.5rem', color: '#1e293b' }}>אין הרשאה</h3>
+                <p style={{ color: '#64748b', fontSize: '0.88rem', marginBottom: '1rem' }}>
+                  אין לך הרשאות גישה לקובץ זה. פנה למנהל המערכת לקבלת הרשאה.
+                </p>
+                <button className="btn btn-secondary" onClick={() => setPreviewFile(null)}>סגירה</button>
+              </div>
+            </div>
+          );
+        }
+        const folderName = getFolderName(file.folderId);
         return (
           <div className="task-edit-overlay" onClick={() => setPreviewFile(null)} style={{ zIndex: 250 }}>
             <div className="task-file-preview-modal" onClick={e => e.stopPropagation()} style={{
@@ -663,10 +752,12 @@ export default function TaskBoard() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', borderBottom: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <FileText size={16} style={{ color: '#7c3aed' }} />
-                  <span style={{ fontWeight: 600, fontSize: '0.9rem', color: '#1e293b' }}>{file.name}</span>
+                  <span style={{ fontWeight: 600, fontSize: '0.9rem', color: '#1e293b' }}>
+                    {folderName ? `${folderName} / ` : ''}{file.name}
+                  </span>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn btn-primary btn-sm" onClick={() => { setPreviewFile(null); navigate('/files'); }} style={{ fontSize: '0.78rem', padding: '0.3rem 0.7rem' }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => { setPreviewFile(null); navigate(`/files?openFile=${file.id}`); }} style={{ fontSize: '0.78rem', padding: '0.3rem 0.7rem' }}>
                     <FileEdit size={13} /> עריכה
                   </button>
                   <button className="icon-btn" onClick={() => setPreviewFile(null)}><X size={18} /></button>

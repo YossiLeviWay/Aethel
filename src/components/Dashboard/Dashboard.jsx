@@ -16,8 +16,26 @@ import {
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import Header from '../Layout/Header';
-import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck, Activity, School, UserPlus, Shield, Megaphone, FileText, BarChart3, SlidersHorizontal, ArrowUpDown } from 'lucide-react';
+import { Calendar, CheckSquare, Users, Clock, Star, BookOpen, CheckCircle, XCircle, UserCheck, Activity, School, UserPlus, Shield, Megaphone, FileText, BarChart3, SlidersHorizontal, ArrowUpDown, Plus, X, GripVertical, Maximize2, Minimize2, Trash2, Eye, PlusCircle, Columns } from 'lucide-react';
 import './Dashboard.css';
+
+const WIDGET_TYPES = {
+  my_tasks: { label: 'המשימות שלי', icon: CheckSquare, defaultSize: 'full' },
+  events: { label: 'אירועים קרובים', icon: Calendar, defaultSize: 'half' },
+  holidays: { label: 'חגים וחופשות', icon: Star, defaultSize: 'half' },
+  announcements: { label: 'הודעות אחרונות', icon: Megaphone, defaultSize: 'full' },
+  team_activity: { label: 'פעילות צוות', icon: Users, defaultSize: 'half' },
+  file_tracker: { label: 'מעקב קבצים', icon: FileText, defaultSize: 'half' },
+  upcoming_week: { label: 'השבוע הקרוב', icon: Calendar, defaultSize: 'full' },
+  staff_tasks: { label: 'משימות שהוסיפו אנשי צוות', icon: UserPlus, defaultSize: 'half' },
+};
+
+const DEFAULT_WIDGETS = [
+  { type: 'my_tasks', size: 'full' },
+  { type: 'announcements', size: 'full' },
+  { type: 'events', size: 'half' },
+  { type: 'holidays', size: 'half' },
+];
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -97,6 +115,18 @@ export default function Dashboard() {
   const [myTeams, setMyTeams] = useState([]);
   const [taskSortBy, setTaskSortBy] = useState('priority'); // 'priority' | 'dueDate'
 
+  // Widget management
+  const [widgets, setWidgets] = useState(DEFAULT_WIDGETS);
+  const [widgetContextMenu, setWidgetContextMenu] = useState(null); // { x, y, widgetIdx }
+  const [showAddWidget, setShowAddWidget] = useState(false);
+  const [addWidgetPos, setAddWidgetPos] = useState({ x: 0, y: 0 });
+
+  // Team activity & file tracking
+  const [teamActivity, setTeamActivity] = useState([]);
+  const [trackedFiles, setTrackedFiles] = useState([]);
+  const [weekTasks, setWeekTasks] = useState([]);
+  const [staffTaskActivity, setStaffTaskActivity] = useState([]);
+
   // Filter preferences state
   const [showEventsFilter, setShowEventsFilter] = useState(false);
   const [showHolidaysFilter, setShowHolidaysFilter] = useState(false);
@@ -118,6 +148,126 @@ export default function Dashboard() {
       setHiddenHolidayTypes([]);
     }
   }, [userData?.dashboardPreferences]);
+
+  // Load widget config from userData
+  useEffect(() => {
+    const savedWidgets = userData?.dashboardPreferences?.widgets;
+    if (savedWidgets && Array.isArray(savedWidgets) && savedWidgets.length > 0) {
+      setWidgets(savedWidgets);
+    }
+  }, [userData?.dashboardPreferences?.widgets]);
+
+  async function saveWidgets(newWidgets) {
+    setWidgets(newWidgets);
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, 'users', currentUser.uid), {
+        'dashboardPreferences.widgets': newWidgets,
+      });
+    } catch (err) {
+      console.error('Error saving widget config:', err);
+    }
+  }
+
+  function addWidget(type) {
+    const config = WIDGET_TYPES[type];
+    if (!config) return;
+    const newWidgets = [...widgets, { type, size: config.defaultSize }];
+    saveWidgets(newWidgets);
+    setShowAddWidget(false);
+  }
+
+  function removeWidget(idx) {
+    const newWidgets = widgets.filter((_, i) => i !== idx);
+    saveWidgets(newWidgets);
+    setWidgetContextMenu(null);
+  }
+
+  function resizeWidget(idx, newSize) {
+    const newWidgets = [...widgets];
+    newWidgets[idx] = { ...newWidgets[idx], size: newSize };
+    saveWidgets(newWidgets);
+    setWidgetContextMenu(null);
+  }
+
+  function moveWidget(idx, direction) {
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= widgets.length) return;
+    const newWidgets = [...widgets];
+    [newWidgets[idx], newWidgets[newIdx]] = [newWidgets[newIdx], newWidgets[idx]];
+    saveWidgets(newWidgets);
+    setWidgetContextMenu(null);
+  }
+
+  function handleDashboardContextMenu(e) {
+    e.preventDefault();
+    setAddWidgetPos({ x: Math.min(e.clientX, window.innerWidth - 220), y: Math.min(e.clientY, window.innerHeight - 300) });
+    setShowAddWidget(true);
+    setWidgetContextMenu(null);
+  }
+
+  function handleWidgetContextMenu(e, idx) {
+    e.preventDefault();
+    e.stopPropagation();
+    setWidgetContextMenu({
+      x: Math.min(e.clientX, window.innerWidth - 200),
+      y: Math.min(e.clientY, window.innerHeight - 250),
+      widgetIdx: idx
+    });
+    setShowAddWidget(false);
+  }
+
+  // Close context menus on click
+  useEffect(() => {
+    function handleClick() { setWidgetContextMenu(null); setShowAddWidget(false); }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
+
+  // Load team activity (recent tasks created by team members)
+  useEffect(() => {
+    if (!selectedSchool || !currentUser?.uid) return;
+    const userTeamIds = myTeams.filter(t => Array.isArray(t.memberIds) && t.memberIds.includes(currentUser.uid)).map(t => t.id);
+    if (userTeamIds.length === 0) { setTeamActivity([]); return; }
+    const teamMemberIds = new Set();
+    myTeams.filter(t => userTeamIds.includes(t.id)).forEach(t => (t.memberIds || []).forEach(id => teamMemberIds.add(id)));
+    const q = query(collection(db, `tasks_${selectedSchool}`), orderBy('createdAt', 'desc'), limit(20));
+    const unsub = onSnapshot(q, (snap) => {
+      const tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setStaffTaskActivity(tasks.slice(0, 10));
+      // Filter to tasks by team members
+      const teamTasks = tasks.filter(t => {
+        if (t.assigneeType === 'team' && userTeamIds.includes(t.assigneeTeamId)) return true;
+        return false;
+      });
+      setTeamActivity(teamTasks.slice(0, 8));
+    }, () => setTeamActivity([]));
+    return unsub;
+  }, [selectedSchool, currentUser?.uid, myTeams]);
+
+  // Load tracked files (recently modified files accessible to user)
+  useEffect(() => {
+    if (!selectedSchool) return;
+    const q = query(collection(db, `files_${selectedSchool}`), orderBy('lastModified', 'desc'), limit(10));
+    const unsub = onSnapshot(q, (snap) => {
+      setTrackedFiles(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(f => f.lastModified));
+    }, () => setTrackedFiles([]));
+    return unsub;
+  }, [selectedSchool]);
+
+  // Load upcoming week events
+  useEffect(() => {
+    if (!selectedSchool) return;
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const nextWeekStr = nextWeek.toISOString().split('T')[0];
+    const q = query(collection(db, `events_${selectedSchool}`), where('date', '>=', todayStr), where('date', '<=', nextWeekStr), orderBy('date', 'asc'));
+    const unsub = onSnapshot(q, (snap) => {
+      setWeekTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => setWeekTasks([]));
+    return unsub;
+  }, [selectedSchool]);
 
   // Save filter preferences to Firestore
   async function saveFilterPreferences(newHiddenEvents, newHiddenHolidays) {
@@ -615,6 +765,187 @@ export default function Dashboard() {
     day: 'numeric',
   });
 
+  function renderWidgetContent(widget) {
+    const prioColors = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' };
+    const prioLabels = { high: 'גבוהה', medium: 'בינונית', low: 'נמוכה' };
+    const prioBgs = { high: '#fef2f2', medium: '#fffbeb', low: '#f0fdf4' };
+    const statusLabels = { todo: 'לביצוע', in_progress: 'בתהליך', done: 'הושלם' };
+
+    switch (widget.type) {
+      case 'my_tasks':
+        if (sortedMyTasks.length === 0) return <p className="section-empty">אין משימות</p>;
+        return (
+          <>
+            <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.5rem' }}>
+              <button className={`btn btn-sm ${taskSortBy === 'priority' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTaskSortBy('priority')} style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}>
+                <ArrowUpDown size={12} /> דחיפות
+              </button>
+              <button className={`btn btn-sm ${taskSortBy === 'dueDate' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTaskSortBy('dueDate')} style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}>
+                <ArrowUpDown size={12} /> תאריך יעד
+              </button>
+            </div>
+            <div className="my-task-list">
+              {sortedMyTasks.slice(0, 10).map(task => {
+                const overdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'done';
+                const teamName = getTaskTeamName(task);
+                return (
+                  <div key={task.id} className="my-task-item" style={{ borderRightColor: prioColors[task.priority] || '#f59e0b', cursor: 'pointer' }} onClick={() => navigate('/tasks')}>
+                    <div className="my-task-main">
+                      <span className="my-task-title">{task.title}</span>
+                      <div className="my-task-meta">
+                        <span className="my-task-priority" style={{ background: prioBgs[task.priority], color: prioColors[task.priority] }}>{prioLabels[task.priority] || 'בינונית'}</span>
+                        <span className="my-task-team"><Users size={10} style={{ verticalAlign: 'middle', marginLeft: '0.15rem' }} />{teamName}</span>
+                        <span className="my-task-status" style={{ color: task.status === 'in_progress' ? '#2563eb' : '#64748b' }}>{statusLabels[task.status] || 'לביצוע'}</span>
+                        {task.dueDate && <span className={`my-task-due ${overdue ? 'my-task-due--late' : ''}`}>{new Date(task.dueDate).toLocaleDateString('he-IL')}</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        );
+      case 'events':
+        if (filteredEvents.length === 0) return <p className="section-empty">אין אירועים קרובים</p>;
+        return (
+          <div className="event-list">
+            {filteredEvents.map(event => (
+              <div key={event.id} className="event-card" style={{ cursor: 'pointer' }} onClick={() => { const d = new Date(event.date + 'T00:00:00'); navigate(`/calendar?year=${d.getFullYear()}&month=${d.getMonth()}`); }}>
+                <div className="event-date-badge">
+                  <span className="event-day">{new Date(event.date + 'T00:00:00').getDate()}</span>
+                  <span className="event-month">{new Date(event.date + 'T00:00:00').toLocaleDateString('he-IL', { month: 'short' })}</span>
+                </div>
+                <div className="event-details">
+                  <span className="event-title">{event.title}</span>
+                  {event.category && <span className="event-category">{event.category}</span>}
+                  <span className="event-countdown">{getDaysUntil(event.date)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      case 'holidays':
+        if (filteredHolidays.length === 0) return <p className="section-empty">אין חגים קרובים</p>;
+        return (
+          <div className="holiday-list">
+            {filteredHolidays.map((holiday, idx) => (
+              <div key={idx} className="holiday-card" style={{ borderRightColor: HOLIDAY_BORDER_COLORS[holiday.type] || '#e2e8f0', cursor: 'pointer' }} onClick={() => { const d = new Date(holiday.startDate + 'T00:00:00'); navigate(`/calendar?year=${d.getFullYear()}&month=${d.getMonth()}`); }}>
+                <div className="holiday-info">
+                  <span className="holiday-name">{holiday.name}</span>
+                  <span className="holiday-dates">{formatHebrewDate(holiday.startDate)}{holiday.startDate !== holiday.endDate && <> - {formatHebrewDate(holiday.endDate)}</>}</span>
+                </div>
+                <div className="holiday-meta">
+                  <span className="holiday-type-badge" style={{ background: holiday.color }}>{HOLIDAY_TYPE_LABELS[holiday.type] || holiday.type}</span>
+                  <span className="holiday-countdown">{getDaysUntil(holiday.startDate)}</span>
+                  {holiday.isVacation && <span className="holiday-vacation-badge">חופשה</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      case 'announcements':
+        if (recentAnnouncements.length === 0) return <p className="section-empty">אין הודעות</p>;
+        return (
+          <div className="announcement-list-dashboard">
+            {recentAnnouncements.map(ann => (
+              <div key={ann.id} className="announcement-dashboard-card">
+                <div className="announcement-dashboard-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Megaphone size={12} style={{ color: '#6366f1' }} />
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{ann.senderName}</span>
+                  </div>
+                  <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                    {ann.createdAt ? new Date(ann.createdAt).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }) : ''}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.88rem', color: '#334155', marginTop: '0.35rem', lineHeight: 1.5 }}>{ann.text}</div>
+              </div>
+            ))}
+          </div>
+        );
+      case 'team_activity':
+        if (teamActivity.length === 0) return <p className="section-empty">אין פעילות צוות</p>;
+        return (
+          <div className="my-task-list">
+            {teamActivity.map(task => {
+              const teamName = getTaskTeamName(task);
+              return (
+                <div key={task.id} className="my-task-item" style={{ borderRightColor: '#2563eb', cursor: 'pointer' }} onClick={() => navigate('/tasks')}>
+                  <div className="my-task-main">
+                    <span className="my-task-title">{task.title}</span>
+                    <div className="my-task-meta">
+                      <span className="my-task-team"><Users size={10} style={{ verticalAlign: 'middle', marginLeft: '0.15rem' }} />{teamName}</span>
+                      <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{task.createdBy || ''}</span>
+                      {task.dueDate && <span className="my-task-due">{new Date(task.dueDate).toLocaleDateString('he-IL')}</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      case 'file_tracker':
+        if (trackedFiles.length === 0) return <p className="section-empty">אין קבצים שנערכו לאחרונה</p>;
+        return (
+          <div className="my-task-list">
+            {trackedFiles.slice(0, 8).map(file => (
+              <div key={file.id} className="my-task-item" style={{ borderRightColor: '#7c3aed', cursor: 'pointer' }} onClick={() => navigate(`/files?openFile=${file.id}`)}>
+                <div className="my-task-main">
+                  <span className="my-task-title">
+                    <FileText size={12} style={{ verticalAlign: 'middle', marginLeft: '0.2rem', color: '#7c3aed' }} />
+                    {file.name}
+                  </span>
+                  <div className="my-task-meta">
+                    {file.lastModifiedBy && <span style={{ fontSize: '0.7rem', color: '#64748b' }}>נערך ע"י: {file.lastModifiedBy}</span>}
+                    {file.lastModified && <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{formatActivityDate(file.lastModified)}</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      case 'upcoming_week':
+        if (weekTasks.length === 0) return <p className="section-empty">אין אירועים השבוע</p>;
+        return (
+          <div className="event-list">
+            {weekTasks.map(event => (
+              <div key={event.id} className="event-card" style={{ cursor: 'pointer' }} onClick={() => { const d = new Date(event.date + 'T00:00:00'); navigate(`/calendar?year=${d.getFullYear()}&month=${d.getMonth()}`); }}>
+                <div className="event-date-badge">
+                  <span className="event-day">{new Date(event.date + 'T00:00:00').getDate()}</span>
+                  <span className="event-month">{new Date(event.date + 'T00:00:00').toLocaleDateString('he-IL', { month: 'short' })}</span>
+                </div>
+                <div className="event-details">
+                  <span className="event-title">{event.title}</span>
+                  {event.category && <span className="event-category">{event.category}</span>}
+                  <span className="event-countdown">{getDaysUntil(event.date)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      case 'staff_tasks':
+        if (staffTaskActivity.length === 0) return <p className="section-empty">אין משימות אחרונות</p>;
+        return (
+          <div className="my-task-list">
+            {staffTaskActivity.slice(0, 8).map(task => (
+              <div key={task.id} className="my-task-item" style={{ borderRightColor: prioColors[task.priority] || '#f59e0b', cursor: 'pointer' }} onClick={() => navigate('/tasks')}>
+                <div className="my-task-main">
+                  <span className="my-task-title">{task.title}</span>
+                  <div className="my-task-meta">
+                    <span className="my-task-priority" style={{ background: prioBgs[task.priority], color: prioColors[task.priority] }}>{prioLabels[task.priority] || 'בינונית'}</span>
+                    <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>יוצר: {task.createdBy || '—'}</span>
+                    {task.createdAt && <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{formatActivityDate(task.createdAt)}</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      default:
+        return <p className="section-empty">תצוגה לא זמינה</p>;
+    }
+  }
+
   const canApprove = isGlobalAdmin() || isPrincipal();
 
   return (
@@ -788,131 +1119,92 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* My Tasks */}
-        {sortedMyTasks.length > 0 && (
-          <div className="dashboard-section" style={{ marginBottom: '1rem' }}>
-            <div className="section-header">
-              <CheckSquare size={18} />
-              <h2 className="section-title">המשימות שלי ({sortedMyTasks.length})</h2>
-              <div style={{ marginRight: 'auto', display: 'flex', gap: '0.35rem' }}>
-                <button
-                  className={`btn btn-sm ${taskSortBy === 'priority' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setTaskSortBy('priority')}
-                  style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}
-                >
-                  <ArrowUpDown size={12} /> דחיפות
-                </button>
-                <button
-                  className={`btn btn-sm ${taskSortBy === 'dueDate' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setTaskSortBy('dueDate')}
-                  style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}
-                >
-                  <ArrowUpDown size={12} /> תאריך יעד
-                </button>
-              </div>
-            </div>
-            <div className="section-body">
-              <div className="my-task-list">
-                {sortedMyTasks.slice(0, 10).map(task => {
-                  const prioColors = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' };
-                  const prioLabels = { high: 'גבוהה', medium: 'בינונית', low: 'נמוכה' };
-                  const prioBgs = { high: '#fef2f2', medium: '#fffbeb', low: '#f0fdf4' };
-                  const statusLabels = { todo: 'לביצוע', in_progress: 'בתהליך', done: 'הושלם' };
-                  const overdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'done';
-                  const teamName = getTaskTeamName(task);
-                  return (
-                    <div
-                      key={task.id}
-                      className="my-task-item"
-                      style={{ borderRightColor: prioColors[task.priority] || '#f59e0b', cursor: 'pointer' }}
-                      onClick={() => navigate('/tasks')}
-                    >
-                      <div className="my-task-main">
-                        <span className="my-task-title">{task.title}</span>
-                        <div className="my-task-meta">
-                          <span className="my-task-priority" style={{ background: prioBgs[task.priority], color: prioColors[task.priority] }}>
-                            {prioLabels[task.priority] || 'בינונית'}
-                          </span>
-                          <span className="my-task-team">
-                            <Users size={10} style={{ verticalAlign: 'middle', marginLeft: '0.15rem' }} />
-                            {teamName}
-                          </span>
-                          <span className="my-task-status" style={{ color: task.status === 'in_progress' ? '#2563eb' : '#64748b' }}>
-                            {statusLabels[task.status] || 'לביצוע'}
-                          </span>
-                          {task.dueDate && (
-                            <span className={`my-task-due ${overdue ? 'my-task-due--late' : ''}`}>
-                              {new Date(task.dueDate).toLocaleDateString('he-IL')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {sortedMyTasks.length > 10 && (
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    style={{ width: '100%', marginTop: '0.5rem' }}
-                    onClick={() => navigate('/tasks')}
-                  >
-                    עוד {sortedMyTasks.length - 10} משימות...
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Recent Announcements */}
-        {recentAnnouncements.length > 0 && (
-          <div className="dashboard-section" style={{ marginBottom: '1rem' }}>
-            <div className="section-header">
-              <Megaphone size={18} />
-              <h2 className="section-title">הודעות אחרונות</h2>
-            </div>
-            <div className="section-body">
-              <div className="announcement-list-dashboard">
-                {recentAnnouncements.map(ann => (
-                  <div key={ann.id} className="announcement-dashboard-card">
-                    <div className="announcement-dashboard-header">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <Megaphone size={12} style={{ color: '#6366f1' }} />
-                        <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{ann.senderName}</span>
-                        {ann.senderRole && (
-                          <span className={`msg-role-badge msg-role--${ann.senderRole}`} style={{ fontSize: '0.7rem', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
-                            {ann.senderRole === 'global_admin' ? 'מנהל על' : ann.senderRole === 'principal' ? 'מנהל מוסד' : ann.senderRole === 'editor' ? 'עורך' : 'צופה'}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <span style={{ fontSize: '0.7rem', background: '#ede9fe', color: '#6366f1', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
-                          <Users size={10} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: '0.15rem' }} />
-                          {ann.targetName}
-                        </span>
-                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                          {ann.createdAt ? new Date(ann.createdAt).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }) + ' ' + new Date(ann.createdAt).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </span>
-                      </div>
-                    </div>
-                    <div style={{ fontSize: '0.88rem', color: '#334155', marginTop: '0.35rem', lineHeight: 1.5 }}>
-                      {ann.text}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button
-                className="btn btn-secondary btn-sm"
-                style={{ marginTop: '0.5rem', width: '100%' }}
-                onClick={() => navigate('/messages')}
+        {/* Customizable Widget Grid */}
+        <div className="dashboard-widgets" onContextMenu={handleDashboardContextMenu}>
+          {widgets.map((widget, idx) => {
+            const config = WIDGET_TYPES[widget.type];
+            if (!config) return null;
+            const Icon = config.icon;
+            const gridColumn = widget.size === 'full' ? '1 / -1' : undefined;
+            return (
+              <div
+                key={`${widget.type}-${idx}`}
+                className="dashboard-section dashboard-widget"
+                style={{ gridColumn }}
+                onContextMenu={(e) => handleWidgetContextMenu(e, idx)}
               >
-                לכל ההודעות
-              </button>
+                <div className="section-header">
+                  <Icon size={18} />
+                  <h2 className="section-title">{config.label}</h2>
+                  <div style={{ marginRight: 'auto', display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                    <button className="widget-size-btn" title="שנה גודל" onClick={() => resizeWidget(idx, widget.size === 'full' ? 'half' : 'full')}>
+                      {widget.size === 'full' ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                    </button>
+                    <button className="widget-size-btn widget-size-btn--danger" title="הסר תצוגה" onClick={() => removeWidget(idx)}>
+                      <X size={13} />
+                    </button>
+                  </div>
+                </div>
+                <div className="section-body">
+                  {renderWidgetContent(widget)}
+                </div>
+              </div>
+            );
+          })}
+          {widgets.length === 0 && (
+            <div className="dashboard-empty" style={{ gridColumn: '1 / -1' }}>
+              <PlusCircle size={32} style={{ color: '#94a3b8' }} />
+              <p>לחץ ימני כדי להוסיף תצוגות לדשבורד</p>
             </div>
+          )}
+        </div>
+
+        {/* Right-click: Add widget menu */}
+        {showAddWidget && (
+          <div className="context-menu" style={{ position: 'fixed', top: addWidgetPos.y, left: addWidgetPos.x, zIndex: 1000 }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>הוסף תצוגה</div>
+            {Object.entries(WIDGET_TYPES).map(([type, config]) => {
+              const Icon = config.icon;
+              const alreadyAdded = widgets.some(w => w.type === type);
+              return (
+                <button
+                  key={type}
+                  className="context-menu-item"
+                  onClick={() => addWidget(type)}
+                  disabled={alreadyAdded}
+                  style={alreadyAdded ? { opacity: 0.4 } : undefined}
+                >
+                  <Icon size={14} /> {config.label} {alreadyAdded ? '✓' : ''}
+                </button>
+              );
+            })}
           </div>
         )}
 
-        <div className="dashboard-grid">
+        {/* Right-click on widget: manage */}
+        {widgetContextMenu && (
+          <div className="context-menu" style={{ position: 'fixed', top: widgetContextMenu.y, left: widgetContextMenu.x, zIndex: 1000 }} onClick={e => e.stopPropagation()}>
+            <button className="context-menu-item" onClick={() => resizeWidget(widgetContextMenu.widgetIdx, 'full')}>
+              <Maximize2 size={14} /> רוחב מלא
+            </button>
+            <button className="context-menu-item" onClick={() => resizeWidget(widgetContextMenu.widgetIdx, 'half')}>
+              <Columns size={14} /> חצי רוחב
+            </button>
+            <div className="context-menu-divider" />
+            <button className="context-menu-item" onClick={() => moveWidget(widgetContextMenu.widgetIdx, -1)} disabled={widgetContextMenu.widgetIdx === 0}>
+              <ArrowUpDown size={14} /> הזז למעלה
+            </button>
+            <button className="context-menu-item" onClick={() => moveWidget(widgetContextMenu.widgetIdx, 1)} disabled={widgetContextMenu.widgetIdx === widgets.length - 1}>
+              <ArrowUpDown size={14} /> הזז למטה
+            </button>
+            <div className="context-menu-divider" />
+            <button className="context-menu-item context-menu-item--danger" onClick={() => removeWidget(widgetContextMenu.widgetIdx)}>
+              <Trash2 size={14} /> הסר תצוגה
+            </button>
+          </div>
+        )}
+
+        <div className="dashboard-grid" style={{ display: 'none' }}>
           {/* Upcoming Events */}
           <div className="dashboard-section">
             <div className="section-header">

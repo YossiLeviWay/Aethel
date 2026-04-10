@@ -97,6 +97,10 @@ export function AuthProvider({ children }) {
   }
 
   async function logout() {
+    // Mark user as offline before signing out
+    if (currentUser) {
+      try { await updateDoc(doc(db, 'users', currentUser.uid), { isOnline: false, lastSeen: new Date().toISOString() }); } catch {}
+    }
     setUserData(null);
     setSelectedSchool(null);
     return signOut(auth);
@@ -166,6 +170,8 @@ export function AuthProvider({ children }) {
       setCurrentUser(user);
       if (user) {
         await fetchUserData(user.uid);
+        // Mark user as online
+        try { await updateDoc(doc(db, 'users', user.uid), { isOnline: true, lastSeen: new Date().toISOString() }); } catch {}
       } else {
         setUserData(null);
       }
@@ -173,6 +179,23 @@ export function AuthProvider({ children }) {
     });
     return unsub;
   }, []);
+
+  // Periodic heartbeat to keep online status fresh (every 2 minutes)
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = setInterval(() => {
+      try { updateDoc(doc(db, 'users', currentUser.uid), { lastSeen: new Date().toISOString(), isOnline: true }); } catch {}
+    }, 120000);
+    // Mark offline on page close
+    function handleBeforeUnload() {
+      try { navigator.sendBeacon && updateDoc(doc(db, 'users', currentUser.uid), { isOnline: false, lastSeen: new Date().toISOString() }); } catch {}
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [currentUser?.uid]);
 
   const value = {
     currentUser,

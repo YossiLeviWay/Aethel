@@ -92,6 +92,10 @@ a:hover {
   to { transform: rotate(360deg); }
 }
 
+.spin {
+  animation: spin 0.7s linear infinite;
+}
+
 /* ===== Common Page Layout ===== */
 .page {
   display: flex;
@@ -267,6 +271,11 @@ a:hover {
     gap: 0.5rem;
   }
 
+  .page-toolbar .btn {
+    font-size: 0.75rem;
+    padding: 0.4rem 0.7rem;
+  }
+
   .data-table {
     font-size: 0.78rem;
   }
@@ -274,6 +283,7 @@ a:hover {
   .data-table th {
     padding: 0.5rem 0.5rem;
     font-size: 0.72rem;
+    white-space: nowrap;
   }
 
   .data-table td {
@@ -288,12 +298,26 @@ a:hover {
 
   .card {
     padding: 0.75rem;
+    border-radius: 10px;
+  }
+
+  .icon-btn {
+    width: 26px;
+    height: 26px;
   }
 
   .inline-form .form-group input,
   .inline-form .form-group select {
     font-size: 0.78rem;
     padding: 0.45rem 0.6rem;
+  }
+
+  .form-card {
+    max-height: 60vh;
+  }
+
+  .form-actions {
+    flex-wrap: wrap;
   }
 }
 
@@ -302,12 +326,53 @@ a:hover {
     padding: 0.5rem;
   }
 
+  .page-toolbar {
+    gap: 0.35rem;
+  }
+
+  .page-toolbar .btn {
+    font-size: 0.72rem;
+    padding: 0.35rem 0.6rem;
+    gap: 0.25rem;
+  }
+
   .data-table-wrap {
     margin: 0 -0.5rem;
+  }
+
+  .data-table th {
+    padding: 0.35rem 0.35rem;
+    font-size: 0.68rem;
+  }
+
+  .data-table td {
+    padding: 0.35rem 0.35rem;
+    font-size: 0.72rem;
   }
 
   .td-actions {
     flex-direction: column;
     gap: 0.15rem;
+  }
+
+  .card {
+    padding: 0.6rem;
+    border-radius: 8px;
+  }
+
+  .icon-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+  }
+
+  .inline-form .form-group label {
+    font-size: 0.72rem;
+  }
+
+  .inline-form .form-group input,
+  .inline-form .form-group select {
+    font-size: 0.75rem;
+    padding: 0.4rem 0.5rem;
   }
 }

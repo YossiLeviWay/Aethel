@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { db, storage } from '../../firebase';
 import PermissionsMenu from '../Shared/PermissionsMenu';
@@ -7,6 +8,7 @@ import {
   query,
   where,
   getDocs,
+  getDoc,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -43,13 +45,18 @@ import {
   Share2,
   Pencil,
   Info,
-  MoreVertical
+  MoreVertical,
+  Copy,
+  History,
+  Clock
 } from 'lucide-react';
+import { createNotifications } from '../../utils/notifications';
 import '../Gantt/Gantt.css';
 import './Files.css';
 
 export default function FileManager() {
-  const { userData, currentUser, selectedSchool, isPrincipal, isGlobalAdmin } = useAuth();
+  const { userData, currentUser, selectedSchool, isPrincipal, isGlobalAdmin, isViewer } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const uid = currentUser?.uid;
   const [folders, setFolders] = useState([]);
   const [files, setFiles] = useState([]);
@@ -74,21 +81,39 @@ export default function FileManager() {
   const [renamingItem, setRenamingItem] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [viewerContextMenu, setViewerContextMenu] = useState(null);
+  const [folderPerms, setFolderPerms] = useState({});
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const autoSaveTimerRef = useRef(null);
   const lastSavedContentRef = useRef(null);
+  const fileEditNotifSentRef = useRef(null); // track which file we already notified about
 
   const schoolId = selectedSchool || userData?.schoolId;
   const canManage = isPrincipal() || isGlobalAdmin();
 
   function userCanAccessFolder(folder) {
     if (canManage) return true;
-    if (folder.visibility === 'all') return true;
     if (folder.visibility === 'principal_only') return false;
+    // Check resource_permissions for this folder
+    const perm = folderPerms[folder.id];
+    if (perm && !perm.public) {
+      // Folder has specific permissions set - check user and team access
+      const uid = userData?.uid;
+      const userTeamIds = userData?.teamIds || [];
+      const isInViewers = perm.viewers?.includes(uid) || perm.editors?.includes(uid);
+      const isInTeam = (perm.viewerTeams || []).some(t => userTeamIds.includes(t)) ||
+                       (perm.editorTeams || []).some(t => userTeamIds.includes(t));
+      return isInViewers || isInTeam;
+    }
+    // No specific permissions or public - use legacy checks
+    if (folder.visibility === 'all') return true;
     if (folder.allowedUsers && folder.allowedUsers.includes(userData?.uid)) return true;
-    return folder.visibility === 'all';
+    return false;
   }
 
   function userCanCreateFiles() {
+    if (isViewer()) return false;
     if (canManage) return true;
     const folder = folders.find(f => f.id === selectedFolder);
     if (!folder) return false;
@@ -111,6 +136,23 @@ export default function FileManager() {
     });
   }
 
+  // Load resource permissions for folders
+  useEffect(() => {
+    if (!schoolId) return;
+    const q = query(collection(db, `folders_${schoolId}`));
+    const unsub = onSnapshot(q, async (snap) => {
+      const perms = {};
+      await Promise.all(snap.docs.map(async (d) => {
+        try {
+          const permDoc = await getDoc(doc(db, 'resource_permissions', `folder_${d.id}`));
+          if (permDoc.exists()) perms[d.id] = permDoc.data();
+        } catch {}
+      }));
+      setFolderPerms(perms);
+    });
+    return unsub;
+  }, [schoolId]);
+
   useEffect(() => {
     if (!schoolId) return;
     const q = query(collection(db, `folders_${schoolId}`), orderBy('name'));
@@ -119,7 +161,7 @@ export default function FileManager() {
       setFolders(allFolders.filter(f => userCanAccessFolder(f)));
     });
     return unsub;
-  }, [schoolId, canManage, userData]);
+  }, [schoolId, canManage, userData, folderPerms]);
 
   // Load all files for all folders
   useEffect(() => {
@@ -130,6 +172,23 @@ export default function FileManager() {
     });
     return unsub;
   }, [schoolId]);
+
+  // Open file from URL param (e.g. /files?openFile=abc123)
+  useEffect(() => {
+    const openFileId = searchParams.get('openFile');
+    if (openFileId && files.length > 0 && !editingFile) {
+      const file = files.find(f => f.id === openFileId);
+      if (file && (file.fileType === 'spreadsheet' || file.fileType === 'document')) {
+        setEditingFile(file);
+        if (file.folderId) {
+          setSelectedFolder(file.folderId);
+          setExpandedFolders(prev => ({ ...prev, [file.folderId]: true }));
+        }
+      }
+      // Clear the param so it doesn't re-trigger
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, files]);
 
   async function createFolder(e) {
     e.preventDefault();
@@ -205,17 +264,81 @@ export default function FileManager() {
     }
   }
 
+  function computeSpreadsheetChanges(oldContent, newContent) {
+    try {
+      const oldData = typeof oldContent === 'string' ? JSON.parse(oldContent) : oldContent;
+      const newData = typeof newContent === 'string' ? JSON.parse(newContent) : newContent;
+      if (!oldData || !newData) return [];
+      const changes = [];
+      const oldCells = oldData.cells || {};
+      const newCells = newData.cells || {};
+      const allRefs = new Set([...Object.keys(oldCells), ...Object.keys(newCells)]);
+      for (const ref of allRefs) {
+        const oldVal = oldCells[ref]?.value || '';
+        const newVal = newCells[ref]?.value || '';
+        const oldFormula = oldCells[ref]?.formula || '';
+        const newFormula = newCells[ref]?.formula || '';
+        if (oldVal !== newVal || oldFormula !== newFormula) {
+          changes.push({ cell: ref, oldValue: oldFormula || oldVal, newValue: newFormula || newVal });
+        }
+      }
+      return changes.slice(0, 50); // limit to 50 changes per save
+    } catch { return []; }
+  }
+
   async function saveFileContent(content) {
     if (!editingFile || !schoolId) return;
     setFileSaving(true);
+    const prevContent = lastSavedContentRef.current;
     try {
+      const now = new Date().toISOString();
       await updateDoc(doc(db, `files_${schoolId}`, editingFile.id), {
         content,
-        lastModified: new Date().toISOString(),
+        lastModified: now,
         lastModifiedBy: userData?.fullName || ''
       });
+
+      // Write edit history entry
+      try {
+        const historyEntry = {
+          fileId: editingFile.id,
+          fileName: editingFile.name,
+          fileType: editingFile.fileType,
+          userId: uid,
+          userName: userData?.fullName || '',
+          timestamp: now,
+        };
+        if (editingFile.fileType === 'spreadsheet') {
+          historyEntry.changes = computeSpreadsheetChanges(prevContent, content);
+        } else {
+          historyEntry.summary = 'עריכת מסמך';
+        }
+        // Only write if there are actual changes
+        if (editingFile.fileType !== 'spreadsheet' || historyEntry.changes.length > 0) {
+          await addDoc(collection(db, `file_history_${schoolId}`), historyEntry);
+        }
+      } catch {}
+
       lastSavedContentRef.current = content;
       setEditingFile(prev => ({ ...prev, content }));
+      // Notify team members about file edit (once per file session)
+      if (fileEditNotifSentRef.current !== editingFile.id) {
+        fileEditNotifSentRef.current = editingFile.id;
+        const folderId = editingFile.folderId;
+        const folder = folders.find(f => f.id === folderId);
+        // Notify allowed users of the folder
+        if (folder?.allowedUsers) {
+          const otherIds = folder.allowedUsers.filter(id => id !== uid);
+          if (otherIds.length > 0) {
+            createNotifications(otherIds, {
+              title: `הקובץ "${editingFile.name}" נערך`,
+              body: `${userData?.fullName || 'משתמש'} ערך/ה את הקובץ`,
+              type: 'file',
+              link: '/files'
+            });
+          }
+        }
+      }
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message);
     }
@@ -246,6 +369,7 @@ export default function FileManager() {
   }, [editingFile?.id]);
 
   async function deleteFolder(folderId) {
+    if (isViewer()) return;
     if (!confirm('האם למחוק תיקייה זו וכל תוכנה?')) return;
     const filesSnap = await getDocs(
       query(collection(db, `files_${schoolId}`), where('folderId', '==', folderId))
@@ -262,6 +386,7 @@ export default function FileManager() {
   }
 
   async function deleteFile(fileItem) {
+    if (isViewer()) return;
     if (!confirm('האם למחוק קובץ זה?')) return;
     if (fileItem.storagePath) {
       try { await deleteObject(ref(storage, fileItem.storagePath)); } catch {}
@@ -270,12 +395,73 @@ export default function FileManager() {
     if (editingFile?.id === fileItem.id) setEditingFile(null);
   }
 
+  async function duplicateFile(fileItem) {
+    if (!schoolId || isViewer()) return;
+    try {
+      const { id, ...data } = fileItem;
+      await addDoc(collection(db, `files_${schoolId}`), {
+        ...data,
+        name: (data.name || 'קובץ') + ' - עותק',
+        createdAt: new Date().toISOString(),
+        uploadedBy: userData?.fullName || '',
+        pinnedBy: [],
+      });
+    } catch (err) {
+      alert('שגיאה בשכפול: ' + err.message);
+    }
+  }
+
   function openFile(file) {
     if (file.fileType === 'spreadsheet' || file.fileType === 'document') {
+      // Flush pending autosave for current file before switching
+      if (editingFile && editingFile.id !== file.id && autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+        if (editingFile.content !== lastSavedContentRef.current) {
+          saveFileContent(editingFile.content);
+        }
+      }
       setEditingFile(file);
+      lastSavedContentRef.current = file.content;
+      fileEditNotifSentRef.current = null;
+      // Reload history if panel is open
+      if (showHistory) loadHistory(file.id);
     } else if (file.url) {
       window.open(file.url, '_blank');
     }
+  }
+
+  async function loadHistory(fileId) {
+    if (!schoolId || !fileId) return;
+    setHistoryLoading(true);
+    try {
+      const q = query(
+        collection(db, `file_history_${schoolId}`),
+        where('fileId', '==', fileId),
+        orderBy('timestamp', 'desc')
+      );
+      const snap = await getDocs(q);
+      setHistoryEntries(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch {
+      setHistoryEntries([]);
+    }
+    setHistoryLoading(false);
+  }
+
+  function toggleHistory() {
+    if (showHistory) {
+      setShowHistory(false);
+    } else {
+      setShowHistory(true);
+      if (editingFile) loadHistory(editingFile.id);
+    }
+  }
+
+  function formatHistoryTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' +
+      d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
   }
 
   function formatSize(bytes) {
@@ -547,6 +733,16 @@ export default function FileManager() {
             <div className="tree-panel-header">
               <h3>תיקיות וקבצים</h3>
               <div className="tree-panel-actions">
+                {selectedFolder && userCanCreateFiles() && (
+                  <>
+                    <button className="icon-btn" onClick={() => { setNewFileType('spreadsheet'); setCreateInFolder(selectedFolder); }} title="גיליון חדש">
+                      <Table2 size={15} />
+                    </button>
+                    <button className="icon-btn" onClick={() => { setNewFileType('document'); setCreateInFolder(selectedFolder); }} title="מסמך חדש">
+                      <FileEdit size={15} />
+                    </button>
+                  </>
+                )}
                 {canManage && (
                   <button className="icon-btn" onClick={() => setShowNewFolder(true)} title="תיקייה חדשה">
                     <FolderPlus size={15} />
@@ -666,41 +862,108 @@ export default function FileManager() {
                         {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                       </button>
                     )}
-                    <span className="autosave-status">
-                      <span className={`autosave-dot-inline ${fileSaving ? 'autosave-dot-inline--saving' : ''}`} />
-                      {fileSaving ? 'שומר...' : 'שמירה אוטומטית'}
-                    </span>
+                    {!isViewer() && (
+                      <>
+                        <span className="autosave-status">
+                          <span className={`autosave-dot-inline ${fileSaving ? 'autosave-dot-inline--saving' : ''}`} />
+                          {fileSaving ? 'שומר...' : 'שמירה אוטומטית'}
+                        </span>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => saveFileContent(editingFile.content)}
+                          disabled={fileSaving}
+                        >
+                          <Save size={14} />
+                          שמירה
+                        </button>
+                      </>
+                    )}
+                    {isViewer() && <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>צפייה בלבד</span>}
                     <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => saveFileContent(editingFile.content)}
-                      disabled={fileSaving}
+                      className={`icon-btn ${showHistory ? 'icon-btn--active' : ''}`}
+                      onClick={toggleHistory}
+                      title="היסטוריית עריכה"
                     >
-                      <Save size={14} />
-                      שמירה
+                      <History size={15} />
                     </button>
                   </div>
                 </div>
+                <div className="file-editor-body-wrap">
                 <div className="file-editor-body">
                   {editingFile.fileType === 'spreadsheet' ? (
                     <SpreadsheetEditor
+                      key={editingFile.id}
                       data={typeof editingFile.content === 'string' ? JSON.parse(editingFile.content) : editingFile.content}
-                      onChange={(newData) => {
+                      onChange={isViewer() ? undefined : (newData) => {
                         const json = JSON.stringify(newData);
                         setEditingFile(prev => ({ ...prev, content: json }));
                         autoSave(json);
                       }}
                       onToggleFullscreen={() => setFullscreen(!fullscreen)}
                       isFullscreen={fullscreen}
+                      readOnly={isViewer()}
                     />
                   ) : (
                     <DocumentEditor
+                      key={editingFile.id}
                       content={editingFile.content || ''}
-                      onChange={(newContent) => {
+                      onChange={isViewer() ? undefined : (newContent) => {
                         setEditingFile(prev => ({ ...prev, content: newContent }));
                         autoSave(newContent);
                       }}
+                      readOnly={isViewer()}
                     />
                   )}
+                </div>
+                {/* Edit History Panel */}
+                {showHistory && (
+                  <div className="file-history-panel">
+                    <div className="file-history-header">
+                      <History size={14} />
+                      <span>היסטוריית עריכה</span>
+                      <button className="icon-btn" onClick={() => setShowHistory(false)} style={{ marginRight: 'auto' }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div className="file-history-list">
+                      {historyLoading ? (
+                        <div className="file-history-empty">טוען...</div>
+                      ) : historyEntries.length === 0 ? (
+                        <div className="file-history-empty">אין היסטוריית עריכה</div>
+                      ) : historyEntries.map(entry => (
+                        <div key={entry.id} className="file-history-entry">
+                          <div className="file-history-entry-header">
+                            <span className="file-history-user">{entry.userName || 'משתמש'}</span>
+                            <span className="file-history-time">
+                              <Clock size={11} />
+                              {formatHistoryTime(entry.timestamp)}
+                            </span>
+                          </div>
+                          {entry.fileType === 'spreadsheet' && entry.changes?.length > 0 ? (
+                            <div className="file-history-changes">
+                              {entry.changes.map((ch, i) => (
+                                <div key={i} className="file-history-change">
+                                  <span className="file-history-cell">{ch.cell}</span>
+                                  {ch.oldValue ? (
+                                    <>
+                                      <span className="file-history-old">{ch.oldValue}</span>
+                                      <span className="file-history-arrow">←</span>
+                                      <span className="file-history-new">{ch.newValue}</span>
+                                    </>
+                                  ) : (
+                                    <span className="file-history-new">{ch.newValue}</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="file-history-summary">{entry.summary || 'עריכה'}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 </div>
               </div>
             ) : selectedFolder ? (
@@ -734,11 +997,13 @@ export default function FileManager() {
                         )}
                       </div>
                     )}
-                    <label className="upload-btn">
-                      <Upload size={14} />
-                      {uploading ? 'מעלה...' : 'העלאת קובץ'}
-                      <input type="file" hidden onChange={e => handleUpload(e, selectedFolder)} disabled={uploading} />
-                    </label>
+                    {!isViewer() && (
+                      <label className="upload-btn">
+                        <Upload size={14} />
+                        {uploading ? 'מעלה...' : 'העלאת קובץ'}
+                        <input type="file" hidden onChange={e => handleUpload(e, selectedFolder)} disabled={uploading} />
+                      </label>
+                    )}
                   </div>
                 </div>
 
@@ -860,6 +1125,15 @@ export default function FileManager() {
               <Download size={14} />
               הורדה
             </a>
+          )}
+          {contextMenu.type === 'file' && (contextMenu.item.fileType === 'spreadsheet' || contextMenu.item.fileType === 'document') && !isViewer() && (
+            <button className="context-menu-item" onClick={() => {
+              duplicateFile(contextMenu.item);
+              setContextMenu(null);
+            }}>
+              <Copy size={14} />
+              שכפול
+            </button>
           )}
           <div className="context-menu-divider" />
           {canManage && (

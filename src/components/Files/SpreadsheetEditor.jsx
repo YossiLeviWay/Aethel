@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle, Undo2, Redo2 } from 'lucide-react';
+import { Plus, Minus, FunctionSquare, Maximize2, Minimize2, Calculator, Merge, Paintbrush, Palette, Scissors, Copy, ClipboardPaste, Trash2, ArrowUpDown, ArrowDownUp, PlusCircle, MinusCircle, Undo2, Redo2, ZoomIn, ZoomOut, Type, Lock, Unlock, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, WrapText, Strikethrough } from 'lucide-react';
 import './Editors.css';
 
 function getColLetter(index) {
@@ -183,12 +183,16 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   const [clipboard, setClipboard] = useState(null); // { cells, type: 'cut'|'copy', startRow, startCol, endRow, endCol }
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
+  const [zoomLevel, setZoomLevel] = useState(100);
+  const [fontSize, setFontSize] = useState(13);
+  const [freezeRow, setFreezeRow] = useState(initialData.freezeRow || 0); // number of frozen rows from top
+  const [freezeCol, setFreezeCol] = useState(initialData.freezeCol || 0); // number of frozen cols from right
   const saveTimerRef = useRef(null);
   const cellInputRef = useRef(null);
   const formulaInputRef = useRef(null);
   const tableRef = useRef(null);
 
-  const triggerSave = useCallback((newCells, newHeaders, cols, rows, colWidths, rHeights, merged, styles) => {
+  const triggerSave = useCallback((newCells, newHeaders, cols, rows, colWidths, rHeights, merged, styles, fRow, fCol) => {
     setSaveStatus('pending');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -201,10 +205,12 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
         rowHeights: rHeights || rowHeights,
         mergedCells: merged || mergedCells,
         cellStyles: styles || cellStyles,
+        freezeRow: fRow != null ? fRow : freezeRow,
+        freezeCol: fCol != null ? fCol : freezeCol,
       });
       setSaveStatus('saved');
     }, 800);
-  }, [onChange, columnWidths, rowHeights, mergedCells, cellStyles]);
+  }, [onChange, columnWidths, rowHeights, mergedCells, cellStyles, freezeRow, freezeCol]);
 
   useEffect(() => {
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
@@ -290,7 +296,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   function commitCell(cellRef, rawValue) {
-    pushUndo(cells);
+    pushUndo();
     const newCells = { ...cells };
     const trimmed = (rawValue || '').trim();
     if (!trimmed) {
@@ -525,8 +531,10 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   // Mouse drag selection
   function handleCellMouseDown(ri, ci, e) {
     if (readOnly || e.button !== 0 || formulaSelectMode) return;
-    if (!e.shiftKey) {
-      setIsDragging(true);
+    setIsDragging(true);
+    if (e.shiftKey && selection) {
+      setSelection(prev => prev ? { ...prev, endRow: ri, endCol: ci } : { startRow: ri, startCol: ci, endRow: ri, endCol: ci });
+    } else {
       setSelection({ startRow: ri, startCol: ci, endRow: ri, endCol: ci });
     }
   }
@@ -546,6 +554,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   // Merge cells
   function handleMergeCells() {
     if (!selection) return;
+    pushUndo();
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -573,6 +582,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   // Cell background color
   function applyCellColor(color) {
     if (!selection) return;
+    pushUndo();
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -592,6 +602,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   // Text color
   function applyTextColor(color) {
     if (!selection) return;
+    pushUndo();
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -608,6 +619,43 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     triggerSave(cells, headers, numCols, numRows, columnWidths, rowHeights, mergedCells, newStyles);
   }
 
+  // Apply a style property to selection
+  function applyStyleProp(prop, value) {
+    if (!selection) return;
+    pushUndo();
+    const minR = Math.min(selection.startRow, selection.endRow);
+    const maxR = Math.max(selection.startRow, selection.endRow);
+    const minC = Math.min(selection.startCol, selection.endCol);
+    const maxC = Math.max(selection.startCol, selection.endCol);
+    const newStyles = { ...cellStyles };
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        const key = `${r}-${c}`;
+        const cur = newStyles[key] || {};
+        // Toggle boolean values
+        if (value === 'toggle') {
+          newStyles[key] = { ...cur, [prop]: !cur[prop] };
+        } else {
+          newStyles[key] = { ...cur, [prop]: value };
+        }
+      }
+    }
+    setCellStyles(newStyles);
+    triggerSave(cells, headers, numCols, numRows, columnWidths, rowHeights, mergedCells, newStyles);
+  }
+
+  // Apply font size to selection
+  function applyFontSize(size) {
+    applyStyleProp('fontSize', size);
+  }
+
+  // Get current selected cell style
+  function getSelectionStyle() {
+    if (!selection) return {};
+    const key = `${Math.min(selection.startRow, selection.endRow)}-${Math.min(selection.startCol, selection.endCol)}`;
+    return cellStyles[key] || {};
+  }
+
   // Close context menu on click
   useEffect(() => {
     function handleClick() { setCellContextMenu(null); }
@@ -615,34 +663,111 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     return () => document.removeEventListener('click', handleClick);
   }, []);
 
-  // Undo/Redo
-  function pushUndo(prevCells) {
+  // Undo/Redo - full state snapshots
+  function createSnapshot() {
+    return {
+      cells: { ...cells },
+      cellStyles: { ...cellStyles },
+      mergedCells: [...mergedCells],
+      numRows,
+      numCols,
+      headers: { ...headers },
+      freezeRow,
+      freezeCol,
+    };
+  }
+
+  function pushUndo(snapshot) {
+    const snap = snapshot || createSnapshot();
     setUndoStack(us => {
-      const next = [...us, { ...prevCells }];
+      const next = [...us, snap];
       return next.length > 50 ? next.slice(-50) : next;
     });
     setRedoStack([]);
   }
 
+  function applySnapshot(snap) {
+    setCells(snap.cells);
+    setCellStyles(snap.cellStyles);
+    setMergedCells(snap.mergedCells);
+    setNumRows(snap.numRows);
+    setNumCols(snap.numCols);
+    setHeaders(snap.headers);
+    setFreezeRow(snap.freezeRow);
+    setFreezeCol(snap.freezeCol);
+    triggerSave(snap.cells, snap.headers, snap.numCols, snap.numRows, columnWidths, rowHeights, snap.mergedCells, snap.cellStyles, snap.freezeRow, snap.freezeCol);
+  }
+
   function handleUndo() {
     if (undoStack.length === 0) return;
     const prev = undoStack[undoStack.length - 1];
-    setRedoStack(rs => [...rs, { ...cells }]);
+    setRedoStack(rs => [...rs, createSnapshot()]);
     setUndoStack(us => us.slice(0, -1));
-    setCells(prev);
-    triggerSave(prev, headers, numCols, numRows);
+    applySnapshot(prev);
   }
 
   function handleRedo() {
     if (redoStack.length === 0) return;
     const next = redoStack[redoStack.length - 1];
-    setUndoStack(us => [...us, { ...cells }]);
+    setUndoStack(us => [...us, createSnapshot()]);
     setRedoStack(rs => rs.slice(0, -1));
-    setCells(next);
-    triggerSave(next, headers, numCols, numRows);
+    applySnapshot(next);
   }
 
-  // Global Ctrl+Z / Ctrl+Y
+  // Handle system clipboard paste with auto-expand rows/columns
+  function handleSystemPaste(e) {
+    if (readOnly || !selectedCell) return;
+    if (editingCell) return; // let normal input paste work
+    const pasteData = e.clipboardData?.getData('text');
+    if (!pasteData) return;
+    // Only intercept multi-cell paste (contains tabs or newlines)
+    if (!pasteData.includes('\t') && !pasteData.includes('\n')) return;
+    e.preventDefault();
+
+    const ref = parseCellRef(selectedCell);
+    if (!ref) return;
+    pushUndo();
+
+    const lines = pasteData.split('\n').filter((line, idx, arr) => {
+      // Remove trailing empty line from copy
+      if (idx === arr.length - 1 && !line.trim()) return false;
+      return true;
+    });
+
+    let newNumRows = numRows;
+    let newNumCols = numCols;
+
+    // Calculate required rows and cols
+    const neededRows = ref.row + lines.length;
+    const maxCols = lines.reduce((max, line) => Math.max(max, line.split('\t').length), 0);
+    const neededCols = ref.col + maxCols;
+
+    if (neededRows > newNumRows) newNumRows = neededRows;
+    if (neededCols > newNumCols) newNumCols = neededCols;
+
+    const newCells = { ...cells };
+    lines.forEach((line, lineIdx) => {
+      const cellValues = line.split('\t');
+      cellValues.forEach((val, colIdx) => {
+        const targetRef = getColLetter(ref.col + colIdx) + (ref.row + lineIdx + 1);
+        const trimmed = val.trim();
+        if (trimmed) {
+          if (trimmed.startsWith('=')) {
+            newCells[targetRef] = { ...newCells[targetRef], value: '', formula: trimmed };
+          } else {
+            newCells[targetRef] = { ...newCells[targetRef], value: trimmed, formula: '' };
+          }
+        }
+      });
+    });
+
+    setCells(newCells);
+    if (newNumRows !== numRows) setNumRows(newNumRows);
+    if (newNumCols !== numCols) setNumCols(newNumCols);
+    triggerSave(newCells, headers, newNumCols, newNumRows);
+  }
+
+  // Global Ctrl+Z / Ctrl+Y + paste
   useEffect(() => {
     function handleGlobalKeyDown(e) {
       if (readOnly) return;
@@ -652,10 +777,23 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
       } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
         e.preventDefault();
         handleRedo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !editingCell && selection) {
+        e.preventDefault();
+        copySelection();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'x' && !editingCell && selection) {
+        e.preventDefault();
+        cutSelection();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !editingCell && clipboard) {
+        // Let system paste handler handle if there's external data; otherwise use internal clipboard
+        if (clipboard) pasteClipboard();
       }
     }
     document.addEventListener('keydown', handleGlobalKeyDown);
-    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+    document.addEventListener('paste', handleSystemPaste);
+    return () => {
+      document.removeEventListener('keydown', handleGlobalKeyDown);
+      document.removeEventListener('paste', handleSystemPaste);
+    };
   });
 
   // Context menu for cells/rows/columns
@@ -672,27 +810,40 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function cutSelection() {
     if (!selection) return;
-    pushUndo(cells);
+    pushUndo();
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
     const maxC = Math.max(selection.startCol, selection.endCol);
     const clipCells = {};
+    const clipStyles = {};
+    const textRows = [];
     for (let r = minR; r <= maxR; r++) {
+      const rowVals = [];
       for (let c = minC; c <= maxC; c++) {
         const ref = getColLetter(c) + (r + 1);
         if (cells[ref]) clipCells[`${r - minR}-${c - minC}`] = { ...cells[ref] };
+        const styleKey = `${r}-${c}`;
+        if (cellStyles[styleKey]) clipStyles[`${r - minR}-${c - minC}`] = { ...cellStyles[styleKey] };
+        const cell = cells[ref];
+        const displayVal = cell?.formula ? evaluateFormula(cell.formula, cells) : (cell?.value || '');
+        rowVals.push(displayVal);
       }
+      textRows.push(rowVals.join('\t'));
     }
-    setClipboard({ cells: clipCells, type: 'cut', startRow: minR, startCol: minC, endRow: maxR, endCol: maxC, rows: maxR - minR + 1, cols: maxC - minC + 1 });
-    // Clear source cells
+    setClipboard({ cells: clipCells, styles: clipStyles, type: 'cut', startRow: minR, startCol: minC, endRow: maxR, endCol: maxC, rows: maxR - minR + 1, cols: maxC - minC + 1 });
+    try { navigator.clipboard.writeText(textRows.join('\n')); } catch {}
+    // Clear source cells and styles
     const newCells = { ...cells };
+    const newStyles = { ...cellStyles };
     for (let r = minR; r <= maxR; r++) {
       for (let c = minC; c <= maxC; c++) {
         delete newCells[getColLetter(c) + (r + 1)];
+        delete newStyles[`${r}-${c}`];
       }
     }
     setCells(newCells);
+    setCellStyles(newStyles);
     triggerSave(newCells, headers, numCols, numRows);
     setCellContextMenu(null);
   }
@@ -704,13 +855,24 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     const minC = Math.min(selection.startCol, selection.endCol);
     const maxC = Math.max(selection.startCol, selection.endCol);
     const clipCells = {};
+    const clipStyles = {};
+    const textRows = [];
     for (let r = minR; r <= maxR; r++) {
+      const rowVals = [];
       for (let c = minC; c <= maxC; c++) {
         const ref = getColLetter(c) + (r + 1);
         if (cells[ref]) clipCells[`${r - minR}-${c - minC}`] = { ...cells[ref] };
+        const styleKey = `${r}-${c}`;
+        if (cellStyles[styleKey]) clipStyles[`${r - minR}-${c - minC}`] = { ...cellStyles[styleKey] };
+        const cell = cells[ref];
+        const displayVal = cell?.formula ? evaluateFormula(cell.formula, cells) : (cell?.value || '');
+        rowVals.push(displayVal);
       }
+      textRows.push(rowVals.join('\t'));
     }
-    setClipboard({ cells: clipCells, type: 'copy', startRow: minR, startCol: minC, endRow: maxR, endCol: maxC, rows: maxR - minR + 1, cols: maxC - minC + 1 });
+    setClipboard({ cells: clipCells, styles: clipStyles, type: 'copy', startRow: minR, startCol: minC, endRow: maxR, endCol: maxC, rows: maxR - minR + 1, cols: maxC - minC + 1 });
+    // Write to system clipboard
+    try { navigator.clipboard.writeText(textRows.join('\n')); } catch {}
     setCellContextMenu(null);
   }
 
@@ -718,27 +880,40 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     if (!clipboard || !selectedCell) return;
     const ref = parseCellRef(selectedCell);
     if (!ref) return;
-    pushUndo(cells);
+    pushUndo();
     const newCells = { ...cells };
+    const newStyles = { ...cellStyles };
+    let newNumRows = numRows;
+    let newNumCols = numCols;
+    const neededRows = ref.row + clipboard.rows;
+    const neededCols = ref.col + clipboard.cols;
+    if (neededRows > newNumRows) newNumRows = neededRows;
+    if (neededCols > newNumCols) newNumCols = neededCols;
     for (let r = 0; r < clipboard.rows; r++) {
       for (let c = 0; c < clipboard.cols; c++) {
         const srcData = clipboard.cells[`${r}-${c}`];
+        const srcStyle = clipboard.styles?.[`${r}-${c}`];
         const targetRef = getColLetter(ref.col + c) + (ref.row + r + 1);
-        if (ref.row + r < numRows && ref.col + c < numCols) {
-          if (srcData) {
-            newCells[targetRef] = { ...srcData };
-          }
+        const targetStyleKey = `${ref.row + r}-${ref.col + c}`;
+        if (srcData) {
+          newCells[targetRef] = { ...srcData };
+        }
+        if (srcStyle) {
+          newStyles[targetStyleKey] = { ...srcStyle };
         }
       }
     }
     setCells(newCells);
-    triggerSave(newCells, headers, numCols, numRows);
+    setCellStyles(newStyles);
+    if (newNumRows !== numRows) setNumRows(newNumRows);
+    if (newNumCols !== numCols) setNumCols(newNumCols);
+    triggerSave(newCells, headers, newNumCols, newNumRows);
     setCellContextMenu(null);
   }
 
   function clearSelectionContents() {
     if (!selection) return;
-    pushUndo(cells);
+    pushUndo();
     const minR = Math.min(selection.startRow, selection.endRow);
     const maxR = Math.max(selection.startRow, selection.endRow);
     const minC = Math.min(selection.startCol, selection.endCol);
@@ -755,7 +930,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   function insertRowAt(rowIndex) {
-    pushUndo(cells);
+    pushUndo();
     // Shift all cells from rowIndex down by 1
     const newCells = {};
     Object.entries(cells).forEach(([key, val]) => {
@@ -775,7 +950,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   function insertColAt(colIndex) {
-    pushUndo(cells);
+    pushUndo();
     const newCells = {};
     const newHeaders = {};
     Object.entries(cells).forEach(([key, val]) => {
@@ -802,7 +977,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function deleteRowAt(rowIndex) {
     if (numRows <= 1) return;
-    pushUndo(cells);
+    pushUndo();
     const newCells = {};
     Object.entries(cells).forEach(([key, val]) => {
       const parsed = parseCellRef(key);
@@ -824,7 +999,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
 
   function deleteColAt(colIndex) {
     if (numCols <= 1) return;
-    pushUndo(cells);
+    pushUndo();
     const newCells = {};
     const newHeaders = {};
     Object.entries(cells).forEach(([key, val]) => {
@@ -873,7 +1048,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     });
 
     // Rearrange all columns based on new row order
-    pushUndo(cells);
+    pushUndo();
     const newCells = {};
     rowData.forEach((item, newRow) => {
       for (let c = 0; c < numCols; c++) {
@@ -885,6 +1060,51 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
     setCells(newCells);
     triggerSave(newCells, headers, numCols, numRows);
     setCellContextMenu(null);
+  }
+
+  // Select entire row (shift extends)
+  function selectRow(ri, shiftKey) {
+    if (readOnly) return;
+    if (shiftKey && selection) {
+      setSelection(prev => ({ startRow: prev.startRow, startCol: 0, endRow: ri, endCol: numCols - 1 }));
+    } else {
+      setSelection({ startRow: ri, startCol: 0, endRow: ri, endCol: numCols - 1 });
+      const ref = getColLetter(0) + (ri + 1);
+      setSelectedCell(ref);
+    }
+    setEditingCell(null);
+  }
+
+  // Select entire column (shift extends)
+  function selectCol(ci, shiftKey) {
+    if (readOnly) return;
+    if (shiftKey && selection) {
+      setSelection(prev => ({ startRow: 0, startCol: prev.startCol, endRow: numRows - 1, endCol: ci }));
+    } else {
+      setSelection({ startRow: 0, startCol: ci, endRow: numRows - 1, endCol: ci });
+      const ref = getColLetter(ci) + '1';
+      setSelectedCell(ref);
+    }
+    setEditingCell(null);
+  }
+
+  // Freeze/unfreeze
+  function toggleFreezeRow() {
+    if (!selection) return;
+    pushUndo();
+    const row = Math.max(selection.startRow, selection.endRow) + 1;
+    const newFreeze = freezeRow === row ? 0 : row;
+    setFreezeRow(newFreeze);
+    triggerSave(cells, headers, numCols, numRows, undefined, undefined, undefined, undefined, newFreeze, undefined);
+  }
+
+  function toggleFreezeCol() {
+    if (!selection) return;
+    pushUndo();
+    const col = Math.max(selection.startCol, selection.endCol) + 1;
+    const newFreeze = freezeCol === col ? 0 : col;
+    setFreezeCol(newFreeze);
+    triggerSave(cells, headers, numCols, numRows, undefined, undefined, undefined, undefined, undefined, newFreeze);
   }
 
   function insertCalcFormula(calcId) {
@@ -929,73 +1149,143 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
   }
 
   const stats = getSelectionStats();
+  const curStyle = getSelectionStyle();
 
   return (
     <div className={`spreadsheet-editor ${isFullscreen ? 'spreadsheet-editor--fullscreen' : ''}`}>
       {!readOnly && (
-        <div className="spreadsheet-toolbar">
-          <button className="toolbar-btn" onClick={handleUndo} disabled={undoStack.length === 0} title="ביטול (Ctrl+Z)"><Undo2 size={14} /></button>
-          <button className="toolbar-btn" onClick={handleRedo} disabled={redoStack.length === 0} title="חזרה (Ctrl+Y)"><Redo2 size={14} /></button>
-          <div className="toolbar-separator" />
-          <button className="toolbar-btn" onClick={addColumn} title="הוסף עמודה"><Plus size={14} /> עמודה</button>
-          <button className="toolbar-btn toolbar-btn--danger" onClick={removeColumn} disabled={numCols <= 1} title="הסר עמודה"><Minus size={14} /> עמודה</button>
-          <div className="toolbar-separator" />
-          <button className="toolbar-btn" onClick={addRow} title="הוסף שורה"><Plus size={14} /> שורה</button>
-          <button className="toolbar-btn toolbar-btn--danger" onClick={removeRow} disabled={numRows <= 1} title="הסר שורה"><Minus size={14} /> שורה</button>
-          <div className="toolbar-separator" />
-          <div style={{ position: 'relative' }}>
-            <button className="toolbar-btn" onClick={() => { setShowCalcMenu(!showCalcMenu); setShowCellColorPicker(false); setShowTextColorPicker(false); }} title="חישובים">
-              <Calculator size={14} /> חישובים
-            </button>
-            {showCalcMenu && (
-              <div className="calc-menu">
-                {CALC_FUNCTIONS.map(fn => (
-                  <button key={fn.id} className="calc-menu-item" onClick={() => insertCalcFormula(fn.id)}>
-                    <span className="calc-menu-icon">{fn.icon}</span>
-                    <span>{fn.label}</span>
-                    <span className="calc-menu-syntax">{fn.syntax}()</span>
-                  </button>
-                ))}
+        <div className="spreadsheet-ribbon">
+          {/* Row 1: Main ribbon */}
+          <div className="ribbon-row">
+            {/* Undo/Redo group */}
+            <div className="ribbon-group">
+              <button className="ribbon-btn ribbon-btn--labeled" onClick={handleUndo} disabled={undoStack.length === 0} title="ביטול (Ctrl+Z)"><Undo2 size={14} /><span className="ribbon-label">בטל</span></button>
+              <button className="ribbon-btn ribbon-btn--labeled" onClick={handleRedo} disabled={redoStack.length === 0} title="חזרה (Ctrl+Y)"><Redo2 size={14} /><span className="ribbon-label">חזור</span></button>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Font group */}
+            <div className="ribbon-group">
+              <div className="ribbon-font-size">
+                <button className="ribbon-btn ribbon-btn--sm" onClick={() => { const s = (curStyle.fontSize || fontSize) - 1; if (s >= 8) applyFontSize(s); }} title="הקטן גופן"><Minus size={10} /></button>
+                <span className="ribbon-font-label">{curStyle.fontSize || fontSize}</span>
+                <button className="ribbon-btn ribbon-btn--sm" onClick={() => { const s = (curStyle.fontSize || fontSize) + 1; if (s <= 36) applyFontSize(s); }} title="הגדל גופן"><Plus size={10} /></button>
               </div>
-            )}
-          </div>
-          <div className="toolbar-separator" />
-          <button className="toolbar-btn" onClick={handleMergeCells} title="מזג/בטל מיזוג תאים" disabled={!selection}>
-            <Merge size={14} /> מיזוג
-          </button>
-          <div className="toolbar-separator" />
-          <div style={{ position: 'relative' }}>
-            <button className="toolbar-btn" onClick={() => { setShowCellColorPicker(!showCellColorPicker); setShowCalcMenu(false); setShowTextColorPicker(false); }} title="צבע רקע תא">
-              <Paintbrush size={14} />
-            </button>
-            {showCellColorPicker && (
-              <div className="color-picker-popup">
-                {CELL_COLORS.map(c => (
-                  <button key={c} className="color-swatch-btn" style={{ background: c }} onClick={() => applyCellColor(c)} />
-                ))}
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.bold ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('bold', 'toggle')} title="מודגש (B)"><Bold size={14} /><span className="ribbon-label">מודגש</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.italic ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('italic', 'toggle')} title="נטוי (I)"><Italic size={14} /><span className="ribbon-label">נטוי</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.underline ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('underline', 'toggle')} title="קו תחתון (U)"><Underline size={14} /><span className="ribbon-label">קו תחתון</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.strikethrough ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('strikethrough', 'toggle')} title="קו חוצה"><Strikethrough size={14} /><span className="ribbon-label">חוצה</span></button>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Colors group */}
+            <div className="ribbon-group">
+              <div style={{ position: 'relative' }}>
+                <button className="ribbon-btn ribbon-btn--color ribbon-btn--labeled" onClick={() => { setShowCellColorPicker(!showCellColorPicker); setShowCalcMenu(false); setShowTextColorPicker(false); }} title="צבע רקע">
+                  <Paintbrush size={14} />
+                  <span className="ribbon-label">רקע</span>
+                  <span className="ribbon-color-indicator" style={{ background: curStyle.bg || '#fff' }} />
+                </button>
+                {showCellColorPicker && (
+                  <div className="color-picker-popup">
+                    {CELL_COLORS.map(c => (
+                      <button key={c} className="color-swatch-btn" style={{ background: c }} onClick={() => applyCellColor(c)} />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <div style={{ position: 'relative' }}>
-            <button className="toolbar-btn" onClick={() => { setShowTextColorPicker(!showTextColorPicker); setShowCalcMenu(false); setShowCellColorPicker(false); }} title="צבע טקסט">
-              <Palette size={14} />
-            </button>
-            {showTextColorPicker && (
-              <div className="color-picker-popup">
-                {TEXT_COLORS.map(c => (
-                  <button key={c} className="color-swatch-btn" style={{ background: c }} onClick={() => applyTextColor(c)} />
-                ))}
+              <div style={{ position: 'relative' }}>
+                <button className="ribbon-btn ribbon-btn--color ribbon-btn--labeled" onClick={() => { setShowTextColorPicker(!showTextColorPicker); setShowCalcMenu(false); setShowCellColorPicker(false); }} title="צבע טקסט">
+                  <Type size={14} />
+                  <span className="ribbon-label">טקסט</span>
+                  <span className="ribbon-color-indicator" style={{ background: curStyle.color || '#1e293b' }} />
+                </button>
+                {showTextColorPicker && (
+                  <div className="color-picker-popup">
+                    {TEXT_COLORS.map(c => (
+                      <button key={c} className="color-swatch-btn" style={{ background: c }} onClick={() => applyTextColor(c)} />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          {onToggleFullscreen && (
-            <>
-              <div className="toolbar-separator" />
-              <button className="toolbar-btn" onClick={onToggleFullscreen} title={isFullscreen ? 'יציאה ממסך מלא' : 'מסך מלא'}>
-                {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Alignment group */}
+            <div className="ribbon-group">
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.textAlign === 'right' || !curStyle.textAlign ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'right')} title="ימין"><AlignRight size={14} /><span className="ribbon-label">ימין</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.textAlign === 'center' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'center')} title="מרכז"><AlignCenter size={14} /><span className="ribbon-label">מרכז</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.textAlign === 'left' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('textAlign', 'left')} title="שמאל"><AlignLeft size={14} /><span className="ribbon-label">שמאל</span></button>
+              <div className="ribbon-group-break" />
+              <button className={`ribbon-btn ribbon-btn--labeled${!curStyle.verticalAlign || curStyle.verticalAlign === 'middle' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'middle')} title="אמצע אנכי"><AlignVerticalJustifyCenter size={14} /><span className="ribbon-label">אמצע</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.verticalAlign === 'top' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'top')} title="למעלה"><AlignVerticalJustifyStart size={14} /><span className="ribbon-label">למעלה</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.verticalAlign === 'bottom' ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('verticalAlign', 'bottom')} title="למטה"><AlignVerticalJustifyEnd size={14} /><span className="ribbon-label">למטה</span></button>
+              <div className="ribbon-group-break" />
+              <button className={`ribbon-btn ribbon-btn--labeled${curStyle.wrapText ? ' ribbon-btn--active' : ''}`} onClick={() => applyStyleProp('wrapText', 'toggle')} title="גלישת טקסט"><WrapText size={14} /><span className="ribbon-label">גלישה</span></button>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Structure group */}
+            <div className="ribbon-group">
+              <button className="ribbon-btn" onClick={addColumn} title="הוסף עמודה"><Plus size={12} /><span className="ribbon-label">עמודה</span></button>
+              <button className="ribbon-btn" onClick={addRow} title="הוסף שורה"><Plus size={12} /><span className="ribbon-label">שורה</span></button>
+              <button className="ribbon-btn ribbon-btn--danger" onClick={removeColumn} disabled={numCols <= 1} title="הסר עמודה"><Minus size={12} /><span className="ribbon-label">עמודה</span></button>
+              <button className="ribbon-btn ribbon-btn--danger" onClick={removeRow} disabled={numRows <= 1} title="הסר שורה"><Minus size={12} /><span className="ribbon-label">שורה</span></button>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Merge & Freeze group */}
+            <div className="ribbon-group">
+              <button className="ribbon-btn ribbon-btn--labeled" onClick={handleMergeCells} disabled={!selection} title="מזג/בטל מיזוג"><Merge size={14} /><span className="ribbon-label">מזג</span></button>
+              <button className={`ribbon-btn ribbon-btn--labeled${freezeRow ? ' ribbon-btn--active' : ''}`} onClick={toggleFreezeRow} disabled={!selection} title={freezeRow ? 'שחרר שורות' : 'הקפא שורות'}>
+                {freezeRow ? <Unlock size={14} /> : <Lock size={14} />}<span className="ribbon-label">{freezeRow ? 'שחרר ש' : 'הקפא ש'}</span>
               </button>
-            </>
-          )}
+              <button className={`ribbon-btn ribbon-btn--labeled${freezeCol ? ' ribbon-btn--active' : ''}`} onClick={toggleFreezeCol} disabled={!selection} title={freezeCol ? 'שחרר עמודות' : 'הקפא עמודות'}>
+                {freezeCol ? <Unlock size={14} /> : <Lock size={14} />}<span className="ribbon-label">{freezeCol ? 'שחרר ע' : 'הקפא ע'}</span>
+              </button>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Calc group */}
+            <div className="ribbon-group">
+              <div style={{ position: 'relative' }}>
+                <button className="ribbon-btn ribbon-btn--labeled" onClick={() => { setShowCalcMenu(!showCalcMenu); setShowCellColorPicker(false); setShowTextColorPicker(false); }} title="חישובים">
+                  <Calculator size={14} /><span className="ribbon-label">חישוב</span>
+                </button>
+                {showCalcMenu && (
+                  <div className="calc-menu">
+                    {CALC_FUNCTIONS.map(fn => (
+                      <button key={fn.id} className="calc-menu-item" onClick={() => insertCalcFormula(fn.id)}>
+                        <span className="calc-menu-icon">{fn.icon}</span>
+                        <span>{fn.label}</span>
+                        <span className="calc-menu-syntax">{fn.syntax}()</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="ribbon-separator" />
+
+            {/* Zoom */}
+            <div className="ribbon-group">
+              <div className="toolbar-zoom-group">
+                <button className="ribbon-btn ribbon-btn--sm" onClick={() => setZoomLevel(z => Math.max(50, z - 10))} title="הקטן"><ZoomOut size={12} /></button>
+                <input type="range" min="50" max="200" step="10" value={zoomLevel} onChange={e => setZoomLevel(Number(e.target.value))} className="toolbar-zoom-slider" title={`${zoomLevel}%`} />
+                <button className="ribbon-btn ribbon-btn--sm" onClick={() => setZoomLevel(z => Math.min(200, z + 10))} title="הגדל"><ZoomIn size={12} /></button>
+                <span className="toolbar-zoom-label" onClick={() => setZoomLevel(100)}>{zoomLevel}%</span>
+              </div>
+            </div>
+
+            {onToggleFullscreen && (
+              <>
+                <div className="ribbon-separator" />
+                <button className="ribbon-btn" onClick={onToggleFullscreen} title={isFullscreen ? 'יציאה ממסך מלא' : 'מסך מלא'}>
+                  {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -1027,24 +1317,44 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
       </div>
 
       {/* Spreadsheet Grid */}
-      <div className="spreadsheet-container" dir="rtl">
-        <table className="spreadsheet-table" ref={tableRef}>
+      <div className="spreadsheet-container" dir="rtl" style={{ zoom: zoomLevel / 100 }}>
+        <table className="spreadsheet-table" ref={tableRef} style={{ fontSize: `${fontSize}px` }}>
           <thead>
             <tr>
               <th className="corner-header">#</th>
               {Array.from({ length: numCols }, (_, ci) => (
-                <th key={ci} className="col-header" style={{ width: columnWidths[ci] || 100 }} onContextMenu={(e) => handleCellContextMenu(e, -1, ci, 'col')}>
+                <th
+                  key={ci}
+                  className={`col-header${ci < freezeCol ? ' col-header--frozen' : ''}${ci === freezeCol - 1 ? ' col-header--freeze-border' : ''}`}
+                  style={{ width: columnWidths[ci] || 100 }}
+                  onContextMenu={(e) => handleCellContextMenu(e, -1, ci, 'col')}
+                  onClick={(e) => selectCol(ci, e.shiftKey)}
+                >
                   <span className="col-letter">{getColLetter(ci)}</span>
-                  <input value={headers[ci] || ''} onChange={(e) => handleHeaderChange(ci, e.target.value)} placeholder={getColLetter(ci)} disabled={readOnly} />
+                  <input value={headers[ci] || ''} onChange={(e) => handleHeaderChange(ci, e.target.value)} placeholder={getColLetter(ci)} disabled={readOnly} onClick={e => e.stopPropagation()} />
                   <div className="col-resize-handle" onMouseDown={(e) => handleColumnResize(ci, e)} />
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: numRows }, (_, ri) => (
-              <tr key={ri} style={{ height: rowHeights[ri] || 32 }}>
-                <td className="row-header" style={{ position: 'relative' }} onContextMenu={(e) => handleCellContextMenu(e, ri, -1, 'row')}>
+            {Array.from({ length: numRows }, (_, ri) => {
+              // Calculate sticky top for frozen rows
+              let stickyTop = undefined;
+              if (ri < freezeRow) {
+                stickyTop = 0;
+                for (let r = 0; r < ri; r++) stickyTop += (rowHeights[r] || 32);
+                // Add header height (~40px)
+                stickyTop += 40;
+              }
+              return (
+              <tr key={ri} style={{ height: rowHeights[ri] || 32, ...(ri < freezeRow ? { position: 'sticky', top: stickyTop, zIndex: 4 } : {}) }} className={ri < freezeRow ? 'row--frozen' : ''}>
+                <td
+                  className={`row-header${ri === freezeRow - 1 ? ' row-header--freeze-border' : ''}`}
+                  style={{ position: 'sticky', right: 0 }}
+                  onContextMenu={(e) => handleCellContextMenu(e, ri, -1, 'row')}
+                  onClick={(e) => selectRow(ri, e.shiftKey)}
+                >
                   {ri + 1}
                   <div className="row-resize-handle" onMouseDown={(e) => handleRowResize(ri, e)} />
                 </td>
@@ -1073,7 +1383,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                   return (
                     <td
                       key={ci}
-                      className={`cell${isSelected ? ' cell--selected' : ''}${inSelection && !isSelected ? ' cell--in-selection' : ''}`}
+                      className={`cell${isSelected ? ' cell--selected' : ''}${inSelection && !isSelected ? ' cell--in-selection' : ''}${ri < freezeRow ? ' cell--freeze-row' : ''}${ci < freezeCol ? ' cell--freeze-col' : ''}${ri === freezeRow - 1 ? ' cell--freeze-row-border' : ''}${ci === freezeCol - 1 ? ' cell--freeze-col-border' : ''}`}
                       data-ref={cellRefStr}
                       colSpan={colSpan > 1 ? colSpan : undefined}
                       rowSpan={rowSpan > 1 ? rowSpan : undefined}
@@ -1087,9 +1397,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                       style={{
                         width: columnWidths[ci] || 100,
                         height: rowHeights[ri] || 32,
-                        background: style.bg || undefined,
-                        color: style.color || undefined,
                       }}
+                      data-bg={style.bg || undefined}
                     >
                       {isEditing ? (
                         <input
@@ -1113,7 +1422,22 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                           dir="ltr"
                         />
                       ) : (
-                        <div className={`cell-display${isFormula ? ' cell-display--formula' : ''}${isError ? ' cell-display--error' : ''}`}>
+                        <div
+                          className={`cell-display${isFormula ? ' cell-display--formula' : ''}${isError ? ' cell-display--error' : ''}`}
+                          style={{
+                            background: style.bg || undefined,
+                            color: style.color || undefined,
+                            fontWeight: style.bold ? 700 : undefined,
+                            fontStyle: style.italic ? 'italic' : undefined,
+                            textDecoration: [style.underline && 'underline', style.strikethrough && 'line-through'].filter(Boolean).join(' ') || undefined,
+                            textAlign: style.textAlign || undefined,
+                            justifyContent: style.textAlign === 'center' ? 'center' : style.textAlign === 'left' ? 'flex-end' : undefined,
+                            alignItems: style.verticalAlign === 'top' ? 'flex-start' : style.verticalAlign === 'bottom' ? 'flex-end' : undefined,
+                            fontSize: style.fontSize ? `${style.fontSize}px` : undefined,
+                            flexWrap: style.wrapText ? 'wrap' : undefined,
+                            whiteSpace: style.wrapText ? 'pre-wrap' : undefined,
+                          }}
+                        >
                           {displayVal}
                         </div>
                       )}
@@ -1121,7 +1445,8 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1182,7 +1507,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
               </button>
               <div className="context-menu-divider" />
               <button className="context-menu-item" onClick={() => {
-                pushUndo(cells);
+                pushUndo();
                 const newCells = { ...cells };
                 for (let c = 0; c < numCols; c++) delete newCells[getColLetter(c) + (cellContextMenu.row + 1)];
                 setCells(newCells);
@@ -1208,7 +1533,7 @@ export default function SpreadsheetEditor({ data, onChange, readOnly = false, on
               </button>
               <div className="context-menu-divider" />
               <button className="context-menu-item" onClick={() => {
-                pushUndo(cells);
+                pushUndo();
                 const newCells = { ...cells };
                 for (let r = 0; r < numRows; r++) delete newCells[getColLetter(cellContextMenu.col) + (r + 1)];
                 setCells(newCells);

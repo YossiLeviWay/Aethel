@@ -285,9 +285,11 @@ export function useResourcePermission(resourceType, resourceId) {
         }
         const data = permDoc.data();
         const uid = currentUser.uid;
-        const canView = data.viewers?.includes(uid) || data.editors?.includes(uid);
-        const canEdit = data.editors?.includes(uid);
-        // TODO: Also check team memberships
+        const userTeamIds = userData?.teamIds || [];
+        const inViewerTeam = (data.viewerTeams || []).some(t => userTeamIds.includes(t));
+        const inEditorTeam = (data.editorTeams || []).some(t => userTeamIds.includes(t));
+        const canView = data.viewers?.includes(uid) || data.editors?.includes(uid) || inViewerTeam || inEditorTeam;
+        const canEdit = data.editors?.includes(uid) || inEditorTeam;
         setPerm({ canView, canEdit, loading: false });
       } catch {
         setPerm({ canView: true, canEdit: false, loading: false });
