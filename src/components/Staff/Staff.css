@@ -931,12 +931,12 @@
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
   .staff-grid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 0.75rem;
   }
 
   .staff-card {
-    padding: 1rem;
+    padding: 0.85rem;
   }
 
   .view-toggle {
@@ -946,6 +946,56 @@
   .inline-edit {
     flex-wrap: wrap;
   }
+
+  .search-bar {
+    min-width: 120px;
+  }
+
+  .staff-filters-bar {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+    padding: 0.6rem 0.75rem;
+  }
+
+  .staff-filter-group {
+    width: 100%;
+  }
+
+  .staff-filter-group select {
+    flex: 1;
+  }
+
+  .staff-profile-modal {
+    max-width: 100%;
+    width: 100vw;
+    max-height: 90vh;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .staff-profile-header {
+    padding: 1.5rem 1rem 1rem;
+  }
+
+  .staff-profile-avatar {
+    width: 56px;
+    height: 56px;
+    font-size: 1.3rem;
+  }
+
+  .bulk-table-wrapper {
+    margin: 0 -0.5rem;
+  }
+
+  .bulk-table th {
+    font-size: 0.68rem;
+    padding: 0.4rem 0.3rem;
+  }
+
+  .bulk-input {
+    font-size: 0.78rem;
+    padding: 0.35rem 0.4rem;
+  }
 }
 
 @media (max-width: 480px) {
@@ -954,13 +1004,53 @@
     gap: 0.5rem;
   }
 
+  .staff-card {
+    padding: 0.65rem;
+  }
+
+  .staff-card-avatar-wrap {
+    margin-bottom: 0.5rem;
+  }
+
   .staff-card-avatar {
-    width: 40px;
-    height: 40px;
-    font-size: 0.9rem;
+    width: 36px;
+    height: 36px;
+    font-size: 0.85rem;
+  }
+
+  .staff-online-dot {
+    width: 10px;
+    height: 10px;
   }
 
   .staff-card-name {
-    font-size: 0.82rem;
+    font-size: 0.78rem;
+  }
+
+  .staff-card-title {
+    font-size: 0.72rem;
+  }
+
+  .staff-card-email {
+    font-size: 0.65rem;
+  }
+
+  .staff-card-actions .icon-btn {
+    width: 24px;
+    height: 24px;
+  }
+
+  .role-badge {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.45rem;
+  }
+
+  .staff-card-lastseen {
+    font-size: 0.62rem;
+  }
+
+  .toggle-btn {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.75rem;
   }
 }
