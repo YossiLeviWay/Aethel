@@ -325,7 +325,6 @@
 
   .task-main {
     flex-basis: calc(100% - 50px);
-    min-width: 0;
   }
 
   .task-status-wrap {
@@ -334,41 +333,6 @@
 
   .task-actions {
     order: 5;
-  }
-
-  .task-meta {
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .search-bar {
-    min-width: 120px;
-  }
-
-  .task-edit-modal {
-    max-width: 95vw;
-    padding: 1rem;
-  }
-
-  .task-edit-header h3 {
-    font-size: 0.92rem;
-  }
-
-  .assignee-picker {
-    max-height: 120px;
-  }
-
-  .assignee-chip {
-    font-size: 0.72rem;
-    padding: 0.2rem 0.45rem 0.2rem 0.2rem;
-  }
-
-  .chat-messages {
-    padding: 0.75rem;
-  }
-
-  .chat-msg {
-    max-width: 90%;
   }
 }
 
@@ -474,63 +438,17 @@
 @media (max-width: 480px) {
   .task-row {
     padding: 0.5rem;
-    gap: 0.35rem;
-  }
-
-  .task-priority {
-    width: 26px;
-    height: 26px;
-    border-radius: 6px;
   }
 
   .task-title {
-    font-size: 0.8rem;
-  }
-
-  .task-desc {
-    font-size: 0.7rem;
-  }
-
-  .task-meta {
-    gap: 0.35rem;
-  }
-
-  .task-assignee {
-    font-size: 0.68rem;
-  }
-
-  .task-due {
-    font-size: 0.68rem;
+    font-size: 0.82rem;
   }
 
   .task-status-select {
-    font-size: 0.68rem;
-    padding: 0.25rem 0.4rem;
+    font-size: 0.7rem;
   }
 
   .task-edit-modal {
     max-width: 100%;
-    padding: 0.75rem;
-  }
-
-  .task-edit-header {
-    margin-bottom: 0.75rem;
-  }
-
-  .chat-header {
-    padding: 0.6rem 0.75rem;
-  }
-
-  .chat-title {
-    font-size: 0.82rem;
-  }
-
-  .chat-input {
-    padding: 0.5rem;
-  }
-
-  .chat-input input {
-    font-size: 0.78rem;
-    padding: 0.45rem 0.6rem;
   }
 }
