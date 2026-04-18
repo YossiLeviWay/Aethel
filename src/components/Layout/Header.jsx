@@ -210,17 +210,17 @@ export default function Header({ title }) {
           </div>
         </div>
 
-      {isGlobalAdmin() && (
+      {isGlobalAdmin() && schools.length > 0 && (
         <div className="context-switcher" ref={dropdownRef}>
           <button
             className="context-switcher-btn"
-            onClick={() => schools.length > 0 ? setShowDropdown(!showDropdown) : navigate('/schools')}
+            onClick={() => setShowDropdown(!showDropdown)}
           >
             <Building2 size={16} />
-            <span>{currentSchool?.name || (schools.length === 0 ? 'צור מוסד ראשון' : 'בחרו מוסד')}</span>
-            {schools.length > 0 && <ChevronDown size={14} className={showDropdown ? 'rotate-180' : ''} />}
+            <span>{currentSchool?.name || 'בחרו מוסד'}</span>
+            <ChevronDown size={14} className={showDropdown ? 'rotate-180' : ''} />
           </button>
-          {showDropdown && schools.length > 0 && (
+          {showDropdown && (
             <div className="context-dropdown">
               {schools.length > 3 && (
                 <div className="context-search">

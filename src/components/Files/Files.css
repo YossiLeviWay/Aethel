@@ -753,7 +753,7 @@
   .files-layout {
     flex-direction: column;
     height: auto;
-    min-height: calc(100vh - 170px);
+    min-height: calc(100vh - 115px);
   }
 
   .files-tree-panel {
