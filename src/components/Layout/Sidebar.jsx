@@ -102,6 +102,10 @@ export default function Sidebar() {
   const notifPopupRef = useRef(null);
   const notifBellRef = useRef(null);
 
+  // Mobile more menu state
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef(null);
+
   // Auto-collapse on route change for mobile
   useEffect(() => {
     if (isMobile) setCollapsed(true);
@@ -209,9 +213,6 @@ export default function Sidebar() {
     await logout();
     navigate('/login');
   }
-
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const moreMenuRef = useRef(null);
 
   // Close more menu on route change
   useEffect(() => {
