@@ -62,6 +62,7 @@ function SchoolRequiredRoute({ children }) {
   if (loading) return null;
   const schoolId = selectedSchool || userData?.schoolId;
   if (!schoolId) {
+    if (userData?.role === 'global_admin') return <Navigate to="/schools" />;
     return <Navigate to="/" />;
   }
   return children;

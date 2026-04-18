@@ -191,10 +191,13 @@ export default function Sidebar() {
   const userIsViewer = isViewer();
   const ROLE_RANK = { global_admin: 4, principal: 3, editor: 2, viewer: 1 };
 
+  const isAdmin = userData?.role === 'global_admin';
+
   function canSeeItem(item) {
     // Pending users can only see dashboard
     if (userIsPending) return item.path === '/';
-    if (item.requiresSchool && !schoolId) return false;
+    // Global admin sees all items regardless of school selection
+    if (item.requiresSchool && !schoolId && !isAdmin) return false;
     // Role-specific items
     if (item.roles && userData?.role) {
       if (!item.roles.includes(userData.role)) return false;
