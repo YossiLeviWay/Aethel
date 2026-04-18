@@ -32,18 +32,20 @@ import {
   CheckCheck,
   FileText,
   UserPlus,
-  AlertCircle
+  AlertCircle,
+  MoreHorizontal,
+  X
 } from 'lucide-react';
 import { AVATAR_OPTIONS, AVATAR_ICON_PATHS } from '../../data/avatars';
 import './Layout.css';
 
 const NAV_ITEMS = [
-  { path: '/', icon: Home, label: 'דשבורד', all: true },
-  { path: '/calendar', icon: Calendar, label: 'לוח שנה', requiresSchool: true, viewerAllowed: true },
+  { path: '/', icon: Home, label: 'דשבורד', all: true, bottomNav: true },
+  { path: '/calendar', icon: Calendar, label: 'לוח שנה', requiresSchool: true, viewerAllowed: true, bottomNav: true },
   { path: '/categories', icon: LayoutGrid, label: 'קטגוריות', requiresSchool: true, viewerAllowed: true },
   { path: '/staff', icon: Users, label: 'סגל וקהילה', requiresSchool: true, viewerAllowed: true },
-  { path: '/tasks', icon: CheckSquare, label: 'משימות', requiresSchool: true, viewerAllowed: true },
-  { path: '/files', icon: FolderOpen, label: 'קבצים', requiresSchool: true, viewerAllowed: true },
+  { path: '/tasks', icon: CheckSquare, label: 'משימות', requiresSchool: true, viewerAllowed: true, bottomNav: true },
+  { path: '/files', icon: FolderOpen, label: 'קבצים', requiresSchool: true, viewerAllowed: true, bottomNav: true },
   { path: '/teams', icon: Users, label: 'צוותים', requiresSchool: true, viewerAllowed: true },
   { path: '/messages', icon: MessageCircle, label: 'הודעות', all: true },
   { path: '/holidays', icon: Sun, label: 'חופשות וחגים', requiresSchool: true, viewerAllowed: true },
@@ -99,6 +101,10 @@ export default function Sidebar() {
   const [showNotifPopup, setShowNotifPopup] = useState(false);
   const notifPopupRef = useRef(null);
   const notifBellRef = useRef(null);
+
+  // Mobile more menu state
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef(null);
 
   // Auto-collapse on route change for mobile
   useEffect(() => {
@@ -185,10 +191,13 @@ export default function Sidebar() {
   const userIsViewer = isViewer();
   const ROLE_RANK = { global_admin: 4, principal: 3, editor: 2, viewer: 1 };
 
+  const isAdmin = userData?.role === 'global_admin';
+
   function canSeeItem(item) {
     // Pending users can only see dashboard
     if (userIsPending) return item.path === '/';
-    if (item.requiresSchool && !schoolId) return false;
+    // Global admin sees all items regardless of school selection
+    if (item.requiresSchool && !schoolId && !isAdmin) return false;
     // Role-specific items
     if (item.roles && userData?.role) {
       if (!item.roles.includes(userData.role)) return false;
@@ -208,43 +217,123 @@ export default function Sidebar() {
     navigate('/login');
   }
 
+  // Close more menu on route change
+  useEffect(() => {
+    setShowMoreMenu(false);
+  }, [location.pathname]);
+
+  // Close more menu on outside click
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    function handleClick(e) {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) {
+        setShowMoreMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showMoreMenu]);
+
   const avatarOption = userData?.avatar
     ? AVATAR_OPTIONS.find(a => a.id === userData.avatar)
     : null;
 
+  const visibleItems = NAV_ITEMS.filter(canSeeItem);
+  const bottomPrimary = visibleItems.filter(i => i.bottomNav);
+  const bottomMore = visibleItems.filter(i => !i.bottomNav);
+
+  // Mobile: render bottom nav bar instead of sidebar
+  if (isMobile) {
+    return (
+      <>
+        {/* More menu overlay */}
+        {showMoreMenu && (
+          <div className="bottom-more-overlay" onClick={() => setShowMoreMenu(false)} />
+        )}
+
+        {/* More menu sheet */}
+        {showMoreMenu && (
+          <div className="bottom-more-sheet" ref={moreMenuRef}>
+            <div className="bottom-more-header">
+              <span className="bottom-more-title">תפריט</span>
+              <button className="bottom-more-close" onClick={() => setShowMoreMenu(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="bottom-more-grid">
+              {bottomMore.map(item => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  end={item.path === '/'}
+                  className={({ isActive }) =>
+                    `bottom-more-item ${isActive ? 'bottom-more-item--active' : ''}`
+                  }
+                  onClick={() => setShowMoreMenu(false)}
+                >
+                  <item.icon size={20} />
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
+              <button className="bottom-more-item bottom-more-item--logout" onClick={handleLogout}>
+                <LogOut size={20} />
+                <span>יציאה</span>
+              </button>
+            </div>
+            {userData && (
+              <div className="bottom-more-user">
+                <div
+                  className="sidebar-avatar"
+                  style={avatarOption ? {
+                    background: avatarOption.bg,
+                    color: avatarOption.textColor
+                  } : undefined}
+                >
+                  {avatarOption?.icon && AVATAR_ICON_PATHS[avatarOption.icon] ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                      <path d={AVATAR_ICON_PATHS[avatarOption.icon]} />
+                    </svg>
+                  ) : (
+                    userData.fullName?.charAt(0) || '?'
+                  )}
+                </div>
+                <span className="bottom-more-user-name">{userData.fullName}</span>
+                <span className="bottom-more-user-role">{userData.jobTitle || userData.role}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Bottom navigation bar */}
+        <nav className="bottom-nav">
+          {bottomPrimary.map(item => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              end={item.path === '/'}
+              className={({ isActive }) =>
+                `bottom-nav-item ${isActive ? 'bottom-nav-item--active' : ''}`
+              }
+            >
+              <item.icon size={20} />
+              <span className="bottom-nav-label">{item.label}</span>
+            </NavLink>
+          ))}
+          <button
+            className={`bottom-nav-item ${showMoreMenu ? 'bottom-nav-item--active' : ''}`}
+            onClick={() => setShowMoreMenu(v => !v)}
+          >
+            <MoreHorizontal size={20} />
+            <span className="bottom-nav-label">עוד</span>
+          </button>
+        </nav>
+      </>
+    );
+  }
+
+  // Desktop: render normal sidebar
   return (
     <>
-      {/* Mobile overlay */}
-      {isMobile && !collapsed && (
-        <div className="sidebar-overlay" onClick={() => setCollapsed(true)} />
-      )}
-
-      {/* Mobile hamburger button */}
-      {isMobile && collapsed && (
-        <button
-          className="sidebar-mobile-toggle"
-          onClick={() => setCollapsed(false)}
-          style={{
-            position: 'fixed',
-            top: '0.6rem',
-            right: '0.6rem',
-            zIndex: 101,
-            background: '#fff',
-            border: '1px solid #e2e8f0',
-            borderRadius: 8,
-            width: 36,
-            height: 36,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-          }}
-        >
-          <Menu size={20} />
-        </button>
-      )}
-
       <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
       <div className="sidebar-header">
         {!collapsed && <span className="sidebar-logo">EduFlow</span>}
@@ -258,7 +347,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="sidebar-nav">
-        {NAV_ITEMS.filter(canSeeItem).map(item => {
+        {visibleItems.map(item => {
           const isNotifications = item.path === '/notifications';
 
           return (
