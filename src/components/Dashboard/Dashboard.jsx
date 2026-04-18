@@ -751,7 +751,17 @@ export default function Dashboard() {
         <div className="page-content">
           <div className="dashboard-empty">
             <BookOpen size={48} />
-            <p>יש לבחור מוסד כדי לצפות בדשבורד</p>
+            {isGlobalAdmin() ? (
+              <>
+                <p>אין מוסדות חינוכיים במערכת עדיין</p>
+                <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => navigate('/schools')}>
+                  <School size={16} />
+                  צור מוסד ראשון
+                </button>
+              </>
+            ) : (
+              <p>יש לבחור מוסד כדי לצפות בדשבורד</p>
+            )}
           </div>
         </div>
       </div>
